@@ -33,8 +33,10 @@ ifeq ($(CONFIG_ARCH_RV64I),y)
 	KBUILD_CFLAGS += -mabi=lp64
 	KBUILD_AFLAGS += -mabi=lp64
     
-	KBUILD_RUSTFLAGS += --target=riscv64gc-unknown-linux-gnu
-	
+	# KBUILD_RUSTFLAGS += --target=riscv64gc-unknown-linux-gnu -Csoft-float=y -Ctarget-feature=+f
+	# KBUILD_RUSTFLAGS += -Ctarget-cpu=generic-rv64
+
+    KBUILD_RUSTFLAGS += --target=$(objtree)/scripts/target.json
 	KBUILD_LDFLAGS += -melf64lriscv
 else
 	BITS := 32

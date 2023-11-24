@@ -19,7 +19,13 @@ filechk_rust_target = $< < include/config/auto.conf
 $(obj)/target.json: scripts/generate_rust_target include/config/auto.conf FORCE
 	$(call filechk,rust_target)
 endif
+ifdef CONFIG_RISCV
+always-$(CONFIG_RUST)					+= target.json
+filechk_rust_target = $< < include/config/auto.conf
 
+$(obj)/target.json: scripts/generate_rust_target include/config/auto.conf FORCE
+	$(call filechk,rust_target)
+endif
 hostprogs += generate_rust_target
 generate_rust_target-rust := y
 rustdoc_test_builder-rust := y
