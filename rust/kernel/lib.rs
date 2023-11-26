@@ -48,6 +48,7 @@ pub mod sync;
 pub mod task;
 pub mod types;
 pub mod workqueue;
+pub mod uart;
 
 #[doc(hidden)]
 pub use bindings;

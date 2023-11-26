@@ -20,6 +20,7 @@
  * Sorted alphabetically.
  */
 
+#include "asm/sbi.h"
 #include <kunit/test-bug.h>
 #include <linux/bug.h>
 #include <linux/build_bug.h>
@@ -31,6 +32,7 @@
 #include <linux/spinlock.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
+
 
 __noreturn void rust_helper_BUG(void)
 {
@@ -156,7 +158,11 @@ void rust_helper_init_work_with_key(struct work_struct *work, work_func_t func,
 	work->func = func;
 }
 EXPORT_SYMBOL_GPL(rust_helper_init_work_with_key);
-
+void rust_helper_sbi_console_put(int ch)
+{
+	sbi_ecall(0x01, 0, ch, 0, 0, 0, 0, 0);
+}
+EXPORT_SYMBOL_GPL(rust_helper_sbi_console_put);
 /*
  * `bindgen` binds the C `size_t` type as the Rust `usize` type, so we can
  * use it in contexts where Rust expects a `usize` like slice (array) indices.

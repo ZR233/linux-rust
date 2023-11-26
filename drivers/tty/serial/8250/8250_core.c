@@ -832,6 +832,7 @@ EXPORT_SYMBOL(serial8250_resume_port);
  */
 static int serial8250_probe(struct platform_device *dev)
 {
+	pr_info("Serial: probe");
 	struct plat_serial8250_port *p = dev_get_platdata(&dev->dev);
 	struct uart_8250_port uart;
 	int ret, i, irqflag = 0;
@@ -1014,6 +1015,8 @@ static void serial_8250_overrun_backoff_work(struct work_struct *work)
  */
 int serial8250_register_8250_port(const struct uart_8250_port *up)
 {
+	
+	pr_info("Serial: register");
 	struct uart_8250_port *uart;
 	int ret = -ENOSPC;
 
@@ -1253,6 +1256,8 @@ static int __init serial8250_init(void)
 		goto put_dev;
 
 	serial8250_register_ports(&serial8250_reg, &serial8250_isa_devs->dev);
+
+	pr_info("Serial: init finish");
 
 	ret = platform_driver_register(&serial8250_isa_driver);
 	if (ret == 0)

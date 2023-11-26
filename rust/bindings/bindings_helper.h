@@ -13,8 +13,53 @@
 #include <linux/wait.h>
 #include <linux/sched.h>
 #include <linux/workqueue.h>
+#include <linux/module.h>
+#include <linux/acpi.h>
+#include <linux/module.h>
+#include <linux/moduleparam.h>
+#include <linux/ioport.h>
+#include <linux/init.h>
+#include <linux/console.h>
+#include <linux/sysrq.h>
+#include <linux/delay.h>
+#include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
+#include <linux/tty.h>
+#include <linux/ratelimit.h>
+#include <linux/tty_flip.h>
+#include <linux/serial.h>
+#include <linux/serial_8250.h>
+#include <linux/nmi.h>
+#include <linux/mutex.h>
+#include <linux/slab.h>
+#include <linux/string_helpers.h>
+#include <linux/uaccess.h>
+#include <linux/io.h>
+#include <linux/ioport.h>
+#include <linux/init.h>
+#include <linux/console.h>
+#include <linux/sysrq.h>
+#include <linux/platform_device.h>
+#include <linux/tty.h>
+#include <linux/tty_flip.h>
+#include <linux/serial_core.h>
+#include <linux/serial.h>
+#include <linux/clk.h>
+#include <linux/delay.h>
+#include <linux/ktime.h>
+#include <linux/pinctrl/consumer.h>
+#include <linux/rational.h>
+#include <linux/slab.h>
+#include <linux/of.h>
+#include <linux/io.h>
+#include <linux/dma-mapping.h>
+#include <asm/irq.h>
+#include <asm/sbi.h>
+#include <linux/dma/imx-dma.h>
 
 /* `bindgen` gets confused at certain things. */
 const size_t RUST_CONST_HELPER_ARCH_SLAB_MINALIGN = ARCH_SLAB_MINALIGN;
 const gfp_t RUST_CONST_HELPER_GFP_KERNEL = GFP_KERNEL;
 const gfp_t RUST_CONST_HELPER___GFP_ZERO = __GFP_ZERO;
+
+// const int RUST_CONST_HELPER_SBI_CONSOLE_GET_CHAR = SBI_EXT_0_1_CONSOLE_GETCHAR;
