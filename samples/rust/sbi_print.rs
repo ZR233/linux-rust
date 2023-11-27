@@ -9,6 +9,7 @@ pub fn _print(s: &str) {
         sbi_console_put('\n' as _);
     }
 }
+/// sbi 打印bytes
 pub fn print_bytes(bytes: &[i8]){
     unsafe {
         for c in bytes {
@@ -16,7 +17,7 @@ pub fn print_bytes(bytes: &[i8]){
         }
     }
 }
-
+/// sbi 打印字符串
 #[macro_export]
 macro_rules! pr_println {
     ($($arg:tt)*) => {unsafe{

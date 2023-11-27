@@ -474,7 +474,6 @@ serial_pnp_probe(struct pnp_dev *dev, const struct pnp_device_id *dev_id)
 	uart.port.uartclk = 1843200;
 	device_property_read_u32(&dev->dev, "clock-frequency", &uart.port.uartclk);
 	uart.port.dev = &dev->dev;
-
 	line = serial8250_register_8250_port(&uart);
 	if (line < 0 || (flags & CIR_PORT))
 		return -ENODEV;

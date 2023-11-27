@@ -188,6 +188,7 @@ err_pmruntime:
  */
 static int of_platform_serial_probe(struct platform_device *ofdev)
 {
+	pr_info("Serial: register111");
 	struct of_serial_info *info;
 	struct uart_8250_port port8250;
 	unsigned int port_type;

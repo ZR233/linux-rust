@@ -42,9 +42,9 @@ unsafe impl Send for PlatformDriver {}
 unsafe impl Sync for PlatformDriver {}
 
 impl PlatformDriver {
-    pub fn register(&mut self, model: &ThisModule) -> Result {
+    pub fn register(&mut self, module: &ThisModule) -> Result {
         unsafe {
-            to_result(__platform_driver_register(&mut self.0, model.0))?;
+            to_result(__platform_driver_register(&mut self.0, module.0))?;
             self.1 = true;
         }
         Ok(())
