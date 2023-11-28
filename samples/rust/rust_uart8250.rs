@@ -43,7 +43,7 @@ module! {
     description: "Rust simple uart",
     license: "GPL",
 }
-static mut UART_DRIVER: uart_driver = unsafe{ uart_driver {
+static UART_DRIVER: uart_driver = unsafe{ uart_driver {
     nr: NR,
     major: TTY_MAJOR,
     minor: TTY_MINOR,
