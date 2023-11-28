@@ -10,8 +10,7 @@ pub mod linux;
 pub mod rport;
 use linux::from_result;
 mod sbi_print;
-use crate::linux::ops::UartOps;
-use crate::linux::port::KPort;
+use crate::linux::port::PortWarp;
 use crate::rport::RPort;
 pub use crate::sbi_print::*;
 use core::convert::AsRef;
@@ -21,14 +20,14 @@ use core::ptr::slice_from_raw_parts;
 use kernel::bindings::*;
 use kernel::c_str;
 use kernel::error::*;
+use kernel::learn::platform_driver::*;
+use kernel::learn::uart_driver::*;
+use kernel::learn::uart_opt::*;
+use kernel::learn::uart_port::*;
 use kernel::new_spinlock;
 use kernel::prelude::*;
 use kernel::str::CString;
 use kernel::sync::*;
-use kernel::learn::uart_driver::*;
-use kernel::learn::platform_driver::*;
-use kernel::learn::uart_port::*;
-
 
 const NR: i32 = 4;
 const TTY_MAJOR: i32 = 4;
@@ -44,6 +43,17 @@ module! {
     description: "Rust simple uart",
     license: "GPL",
 }
+static mut UART_DRIVER: uart_driver = unsafe{ uart_driver {
+    nr: NR,
+    major: TTY_MAJOR,
+    minor: TTY_MINOR,
+    dev_name: DEV_NAME.as_char_ptr(),
+    driver_name: DRIVER_NAME.as_char_ptr(),
+    owner: &THIS_MODULE as *const _ as _,
+    cons: null_mut(),
+    state: null_mut(),
+    tty_driver: null_mut(),
+}};
 
 struct RustUartModule {
     platform_driver: PlatformDriver,
@@ -51,9 +61,9 @@ struct RustUartModule {
 }
 
 struct PlatformData {
-    ops: UartOps,
     of: OfDeviceIdList,
     driver: UartDriver,
+    test: u32,
 }
 
 // struct UART8250 {
@@ -78,8 +88,6 @@ impl Console {
 unsafe impl Send for Console {}
 unsafe impl Sync for Console {}
 
-
-
 extern "C" fn console_write(co: *mut console, char: *const i8, count: u32) {
     unsafe {
         let bytes = &*slice_from_raw_parts(char, count as _);
@@ -92,7 +100,7 @@ impl kernel::Module for RustUartModule {
         pr_println!("Rust UART (init)");
         let of = OfDeviceIdList(of_device_id_list());
 
-        let mut driver =UartDriver::from( uart_driver{
+        let mut driver = UartDriver::from(uart_driver {
             nr: NR,
             major: TTY_MAJOR,
             minor: TTY_MINOR,
@@ -100,23 +108,20 @@ impl kernel::Module for RustUartModule {
             driver_name: DRIVER_NAME.as_char_ptr(),
             ..Default::default()
         });
-        
 
         // reg.reg.cons = cons.as_ptr();
         pr_println!("uart register begin");
         driver.register(module)?;
         pr_println!("uart register ok");
         unsafe {
-            let ops = UartOps::new();
-
             let devs =
                 platform_device_alloc(PLATFORM_DRIVER_NAME.as_char_ptr(), PLAT8250_DEV_LEGACY);
 
-            let mut platform_driver = PlatformDriver::from(platform_driver{
-                driver: device_driver{
+            let mut platform_driver = PlatformDriver::from(platform_driver {
+                driver: device_driver {
                     name: c_str!("of_serial").as_char_ptr(),
                     of_match_table: of.0.as_ptr(),
-                   ..Default::default()
+                    ..Default::default()
                 },
                 probe: Some(probe),
                 ..Default::default()
@@ -129,10 +134,11 @@ impl kernel::Module for RustUartModule {
             // platform_driver.0.driver.of_match_table = of.0.as_ptr();
             // platform_driver.0.driver.name = c_str!("of_serial").as_char_ptr();
 
-            let data: Arc<PlatformData> = Arc::try_new(PlatformData { ops, of, driver })?;
-            let data2: Arc<PlatformData> = data.clone();
-            let data_ptr = data2.into_raw();
-            (*devs).dev.platform_data = data_ptr as _;
+            let data: Arc<PlatformData> = Arc::try_new(PlatformData {
+                of,
+                driver,
+                test: 5,
+            })?;
 
             to_result(platform_device_add(devs))?;
             platform_driver.register(module);
@@ -154,29 +160,34 @@ impl Drop for RustUartModule {
     }
 }
 extern "C" fn probe(dev: *mut platform_device) -> i32 {
-    pr_println!("probe");
     from_result(|| {
         unsafe {
-            // let dev = &mut *dev;
-            // let data_ptr = dev.dev.platform_data as *const PlatformData;
-            // let platform = Arc::from_raw(data_ptr);
-            // let port = DevPort::new()?;
-            // let port: Arc<DevPort> = Arc::pin_init(port)?;
+            let dev = &mut *dev;
+            let name = CStr::from_char_ptr(dev.name);
+            pr_println!(
+                "probe: {} platform_data: {:p} driver_data: {:p}",
+                name,
+                dev.dev.platform_data,
+                dev.dev.driver_data
+            );
 
-            // let port_ptr = port.into_raw();
-        
-            // let mut kport: KPort = KPort::new(0, &platform.as_ref().ops)?;
-            // kport.0.private_data = port_ptr as _;
-            
-            
+            let port = PortWarp::new()?;
+            let port: Arc<PortWarp> = Arc::pin_init(port)?;
 
-            // dev.dev.driver_data = ;
+            let mut kport = UartPort::from(uart_port {
+                ..Default::default()
+            });
+
+            kport.set_ops(&port.as_ref().ops);
+            let port_ptr = port.into_raw();
+            dev.dev.driver_data = port_ptr as _;
         }
+        pr_println!("probe finish");
         Ok(0)
     })
 }
 extern "C" fn remove(dev: *mut platform_device) -> i32 {
-    // pr_println!("remove");
+    pr_println!("remove");
     0
 }
 extern "C" fn suspend(dev: *mut platform_device, msg: pm_message) -> i32 {
@@ -215,19 +226,5 @@ fn new_of_device_id(comp: &CStr, data: u32) -> of_device_id {
         compatible,
         type_: [0; 32],
         data: data as _,
-    }
-}
-
-#[pin_data]
-struct DevPort {
-    #[pin]
-    rport: SpinLock<RPort>,
-}
-
-impl DevPort {
-    fn new() -> Result<impl PinInit<Self>> {
-        Ok(pin_init!(Self {
-            rport<- new_spinlock!(RPort::new())
-        }))
     }
 }
