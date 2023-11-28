@@ -8,10 +8,13 @@
 pub mod linux;
 /// rport
 pub mod rport;
+use linux::from_result;
 mod sbi_print;
 use crate::linux::ops::UartOps;
 use crate::linux::port::KPort;
+use crate::rport::RPort;
 pub use crate::sbi_print::*;
+use core::convert::AsRef;
 use core::default::Default;
 use core::ptr::null_mut;
 use core::ptr::slice_from_raw_parts;
@@ -22,7 +25,10 @@ use kernel::new_spinlock;
 use kernel::prelude::*;
 use kernel::str::CString;
 use kernel::sync::*;
-use kernel::uart::*;
+use kernel::learn::uart_driver::*;
+use kernel::learn::platform_driver::*;
+use kernel::learn::uart_port::*;
+
 
 const NR: i32 = 4;
 const TTY_MAJOR: i32 = 4;
@@ -40,10 +46,14 @@ module! {
 }
 
 struct RustUartModule {
-    reg: Registration,
     platform_driver: PlatformDriver,
+    data: Arc<PlatformData>,
+}
+
+struct PlatformData {
     ops: UartOps,
     of: OfDeviceIdList,
+    driver: UartDriver,
 }
 
 // struct UART8250 {
@@ -68,28 +78,7 @@ impl Console {
 unsafe impl Send for Console {}
 unsafe impl Sync for Console {}
 
-extern "C" fn prob(dev: *mut platform_device) -> i32 {
-    pr_println!("prob");
-    unsafe {
-        let dev = &mut *dev;
 
-        // dev.dev.driver_data = ;
-    }
-
-    0
-}
-extern "C" fn remove(dev: *mut platform_device) -> i32 {
-    pr_println!("remove");
-    0
-}
-extern "C" fn suspend(dev: *mut platform_device, msg: pm_message) -> i32 {
-    pr_println!("suspend");
-    0
-}
-extern "C" fn resume(dev: *mut platform_device) -> i32 {
-    pr_println!("resume");
-    0
-}
 
 extern "C" fn console_write(co: *mut console, char: *const i8, count: u32) {
     unsafe {
@@ -98,28 +87,24 @@ extern "C" fn console_write(co: *mut console, char: *const i8, count: u32) {
     }
 }
 
-// impl UART8250 {
-//     fn new(reg: *mut uart_driver, model: &ThisModule) -> Result<Self> {
-//         Ok(Self { ports })
-//     }
-// }
-
 impl kernel::Module for RustUartModule {
     fn init(module: &'static ThisModule) -> Result<Self> {
         pr_println!("Rust UART (init)");
         let of = OfDeviceIdList(of_device_id_list());
-        let mut reg = Registration::default();
-        let reg_ptr = &mut reg.reg as *mut _;
-        // let mut cons = Console::new(reg_ptr);
-        reg.reg.nr = NR;
-        reg.reg.major = TTY_MAJOR;
-        reg.reg.minor = TTY_MINOR;
-        reg.reg.dev_name = DEV_NAME.as_char_ptr();
-        reg.reg.driver_name = DRIVER_NAME.as_char_ptr();
+
+        let mut driver =UartDriver::from( uart_driver{
+            nr: NR,
+            major: TTY_MAJOR,
+            minor: TTY_MINOR,
+            dev_name: DEV_NAME.as_char_ptr(),
+            driver_name: DRIVER_NAME.as_char_ptr(),
+            ..Default::default()
+        });
+        
 
         // reg.reg.cons = cons.as_ptr();
         pr_println!("uart register begin");
-        reg.register(module)?;
+        driver.register(module)?;
         pr_println!("uart register ok");
         unsafe {
             let ops = UartOps::new();
@@ -127,27 +112,37 @@ impl kernel::Module for RustUartModule {
             let devs =
                 platform_device_alloc(PLATFORM_DRIVER_NAME.as_char_ptr(), PLAT8250_DEV_LEGACY);
 
-            to_result(platform_device_add(devs))?;
-
-            let mut platform_driver = PlatformDriver::default();
-            platform_driver.0.probe = Some(prob);
-            platform_driver.0.remove = Some(remove);
-            platform_driver.0.suspend = Some(suspend);
-            platform_driver.0.resume = Some(resume);
+            let mut platform_driver = PlatformDriver::from(platform_driver{
+                driver: device_driver{
+                    name: c_str!("of_serial").as_char_ptr(),
+                    of_match_table: of.0.as_ptr(),
+                   ..Default::default()
+                },
+                probe: Some(probe),
+                ..Default::default()
+            });
+            // platform_driver.0.probe = Some(prob);
+            // platform_driver.0.remove = Some(remove);
+            // platform_driver.0.suspend = Some(suspend);
+            // platform_driver.0.resume = Some(resume);
             // platform_driver.0.driver.name = PLATFORM_DRIVER_NAME.as_char_ptr();
-            platform_driver.0.driver.of_match_table = of.0.as_ptr();
-            platform_driver.0.driver.name = c_str!("of_serial").as_char_ptr();
+            // platform_driver.0.driver.of_match_table = of.0.as_ptr();
+            // platform_driver.0.driver.name = c_str!("of_serial").as_char_ptr();
 
+            let data: Arc<PlatformData> = Arc::try_new(PlatformData { ops, of, driver })?;
+            let data2: Arc<PlatformData> = data.clone();
+            let data_ptr = data2.into_raw();
+            (*devs).dev.platform_data = data_ptr as _;
+
+            to_result(platform_device_add(devs))?;
             platform_driver.register(module);
             pr_println!("platform_driver register finish");
 
             platform_device_del(devs);
             pr_println!("init finish");
             Ok(RustUartModule {
-                reg,
                 platform_driver,
-                ops,
-                of,
+                data,
             })
         }
     }
@@ -158,7 +153,40 @@ impl Drop for RustUartModule {
         pr_info!("Rust UART (exit)\n");
     }
 }
+extern "C" fn probe(dev: *mut platform_device) -> i32 {
+    pr_println!("probe");
+    from_result(|| {
+        unsafe {
+            // let dev = &mut *dev;
+            // let data_ptr = dev.dev.platform_data as *const PlatformData;
+            // let platform = Arc::from_raw(data_ptr);
+            // let port = DevPort::new()?;
+            // let port: Arc<DevPort> = Arc::pin_init(port)?;
 
+            // let port_ptr = port.into_raw();
+        
+            // let mut kport: KPort = KPort::new(0, &platform.as_ref().ops)?;
+            // kport.0.private_data = port_ptr as _;
+            
+            
+
+            // dev.dev.driver_data = ;
+        }
+        Ok(0)
+    })
+}
+extern "C" fn remove(dev: *mut platform_device) -> i32 {
+    // pr_println!("remove");
+    0
+}
+extern "C" fn suspend(dev: *mut platform_device, msg: pm_message) -> i32 {
+    // pr_println!("suspend");
+    0
+}
+extern "C" fn resume(dev: *mut platform_device) -> i32 {
+    // pr_println!("resume");
+    0
+}
 struct OfDeviceIdList(Vec<of_device_id>);
 unsafe impl Send for OfDeviceIdList {}
 unsafe impl Sync for OfDeviceIdList {}
@@ -166,7 +194,8 @@ unsafe impl Sync for OfDeviceIdList {}
 fn of_device_id_list() -> Vec<of_device_id> {
     let mut out = Vec::new();
     // out.try_push(new_of_device_id(c_str!("ns8250"), PORT_8250)).unwrap();
-    out.try_push(new_of_device_id(c_str!("ns16550a"), PORT_16550A)).unwrap();
+    out.try_push(new_of_device_id(c_str!("ns16550a"), PORT_16550A))
+        .unwrap();
 
     out
 }
@@ -174,7 +203,7 @@ fn of_device_id_list() -> Vec<of_device_id> {
 fn new_of_device_id(comp: &CStr, data: u32) -> of_device_id {
     let mut compatible = [0; 128];
     let ptr = comp.as_bytes();
-    for i in 0..ptr.len(){
+    for i in 0..ptr.len() {
         compatible[i] = ptr[i] as _;
     }
 
@@ -186,5 +215,19 @@ fn new_of_device_id(comp: &CStr, data: u32) -> of_device_id {
         compatible,
         type_: [0; 32],
         data: data as _,
+    }
+}
+
+#[pin_data]
+struct DevPort {
+    #[pin]
+    rport: SpinLock<RPort>,
+}
+
+impl DevPort {
+    fn new() -> Result<impl PinInit<Self>> {
+        Ok(pin_init!(Self {
+            rport<- new_spinlock!(RPort::new())
+        }))
     }
 }

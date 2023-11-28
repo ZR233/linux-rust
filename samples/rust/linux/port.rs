@@ -9,7 +9,7 @@ use kernel::{bindings::*, init::PinInit};
 use super::ops::UartOps;
 
 #[repr(transparent)]
-pub struct KPort(uart_port);
+pub struct KPort(pub uart_port);
 
 unsafe impl Send for KPort {}
 unsafe impl Sync for KPort {}
