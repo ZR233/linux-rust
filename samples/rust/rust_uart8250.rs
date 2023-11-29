@@ -11,6 +11,7 @@ pub mod rport;
 use linux::from_result;
 mod sbi_print;
 use crate::linux::port::PortWarp;
+use crate::linux::port::UART_OPS;
 use crate::rport::RPort;
 pub use crate::sbi_print::*;
 use core::convert::AsRef;
@@ -43,17 +44,22 @@ module! {
     description: "Rust simple uart",
     license: "GPL",
 }
-static UART_DRIVER: uart_driver = unsafe{ uart_driver {
-    nr: NR,
-    major: TTY_MAJOR,
-    minor: TTY_MINOR,
-    dev_name: DEV_NAME.as_char_ptr(),
-    driver_name: DRIVER_NAME.as_char_ptr(),
-    owner: &THIS_MODULE as *const _ as _,
-    cons: null_mut(),
-    state: null_mut(),
-    tty_driver: null_mut(),
-}};
+static CONSOLE: Console = unsafe { Console::new(UART_DRIVER.as_ptr()) };
+
+
+static UART_DRIVER: UartDriver = unsafe {
+    UartDriver::from_struct(uart_driver {
+        nr: NR,
+        major: TTY_MAJOR,
+        minor: TTY_MINOR,
+        dev_name: DEV_NAME.as_char_ptr(),
+        driver_name: DRIVER_NAME.as_char_ptr(),
+        owner: &THIS_MODULE as *const _ as _,
+        cons: CONSOLE.as_ptr(),
+        state: null_mut(),
+        tty_driver: null_mut(),
+    })
+};
 
 struct RustUartModule {
     platform_driver: PlatformDriver,
@@ -62,26 +68,44 @@ struct RustUartModule {
 
 struct PlatformData {
     of: OfDeviceIdList,
-    driver: UartDriver,
+    // driver: UartDriver,
     test: u32,
 }
 
-// struct UART8250 {
-//     ports: Vec<Pin<UniqueArc<Port>>>,
-// }
-
 struct Console(console);
 impl Console {
-    fn new(reg: *mut uart_driver) -> Self {
-        let mut cons = console::default();
-        cons.write = Some(console_write);
-
-        cons.data = reg as _;
-        Self(cons)
+    const unsafe fn new(reg: *mut uart_driver) -> Self {
+        let mut name = ['t' as _, 't' as _ , 'y' as _,  'S' as _, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        Self(console {
+            name,
+            write: Some(console_write),
+            read: None,
+            device: Some(uart_console_device),
+            unblank: None,
+            setup: Some(console_setup),
+            exit: None,
+            match_: None,
+            flags: (cons_flags_CON_PRINTBUFFER | cons_flags_CON_ANYTIME) as _,
+            index: -1,
+            cflag: 0,
+            ispeed: 0,
+            ospeed: 0,
+            seq: 0,
+            dropped: 0,
+            data: reg as _,
+            node: hlist_node {
+                next: null_mut(),
+                pprev: null_mut(),
+            },
+            write_atomic: None,
+            nbcon_state: atomic_t { counter: 0 },
+            nbcon_seq: atomic64_t { counter: 0 },
+            pbufs: null_mut(),
+        })
     }
 
-    fn as_ptr(&mut self) -> *mut console {
-        &mut self.0 as _
+    const fn as_ptr(&self) -> *mut console {
+        unsafe { &self.0 as *const _ as _ }
     }
 }
 
@@ -94,24 +118,21 @@ extern "C" fn console_write(co: *mut console, char: *const i8, count: u32) {
         print_bytes(bytes);
     }
 }
+extern "C" fn console_setup(co: *mut console, options: *mut i8) -> i32 {
+    unsafe {
+        let op = CStr::from_char_ptr(options);
 
+        pr_println!("console setup: {}", op.to_str().unwrap());
+    }
+    0
+}
 impl kernel::Module for RustUartModule {
     fn init(module: &'static ThisModule) -> Result<Self> {
         pr_println!("Rust UART (init)");
         let of = OfDeviceIdList(of_device_id_list());
 
-        let mut driver = UartDriver::from(uart_driver {
-            nr: NR,
-            major: TTY_MAJOR,
-            minor: TTY_MINOR,
-            dev_name: DEV_NAME.as_char_ptr(),
-            driver_name: DRIVER_NAME.as_char_ptr(),
-            ..Default::default()
-        });
-
-        // reg.reg.cons = cons.as_ptr();
         pr_println!("uart register begin");
-        driver.register(module)?;
+        UART_DRIVER.register(module)?;
         pr_println!("uart register ok");
         unsafe {
             let devs =
@@ -126,19 +147,13 @@ impl kernel::Module for RustUartModule {
                 probe: Some(probe),
                 ..Default::default()
             });
-            // platform_driver.0.probe = Some(prob);
-            // platform_driver.0.remove = Some(remove);
-            // platform_driver.0.suspend = Some(suspend);
-            // platform_driver.0.resume = Some(resume);
-            // platform_driver.0.driver.name = PLATFORM_DRIVER_NAME.as_char_ptr();
-            // platform_driver.0.driver.of_match_table = of.0.as_ptr();
-            // platform_driver.0.driver.name = c_str!("of_serial").as_char_ptr();
 
             let data: Arc<PlatformData> = Arc::try_new(PlatformData {
                 of,
-                driver,
+                // driver,
                 test: 5,
             })?;
+
 
             to_result(platform_device_add(devs))?;
             platform_driver.register(module);
@@ -159,28 +174,49 @@ impl Drop for RustUartModule {
         pr_info!("Rust UART (exit)\n");
     }
 }
-extern "C" fn probe(dev: *mut platform_device) -> i32 {
+extern "C" fn probe(pl_dev: *mut platform_device) -> i32 {
     from_result(|| {
         unsafe {
-            let dev = &mut *dev;
-            let name = CStr::from_char_ptr(dev.name);
+            let pdev = &mut *pl_dev;
+            let np = pdev.dev.of_node;
+            let dev = &mut pdev.dev as *mut _;
+            let name = CStr::from_char_ptr(pdev.name);
             pr_println!(
                 "probe: {} platform_data: {:p} driver_data: {:p}",
                 name,
-                dev.dev.platform_data,
-                dev.dev.driver_data
+                pdev.dev.platform_data,
+                pdev.dev.driver_data
             );
 
             let port = PortWarp::new()?;
-            let port: Arc<PortWarp> = Arc::pin_init(port)?;
-
-            let mut kport = UartPort::from(uart_port {
+            let port_warp: Arc<PortWarp> = Arc::pin_init(port)?;
+            let mut port = uart_port{
+                line: 0,
+                port_id: 0,
                 ..Default::default()
-            });
+            };
 
-            kport.set_ops(&port.as_ref().ops);
-            let port_ptr = port.into_raw();
-            dev.dev.driver_data = port_ptr as _;
+            pm_runtime_enable(dev);
+            __pm_runtime_resume(dev, RPM_GET_PUT as _);
+
+
+            
+            
+            port.irq = of_irq_get(np, 0) as _;
+            port.uartclk = 0x00384000;
+            port.regshift = 0;
+            port.dev = dev;
+
+            platform_get_resource(pdev, arg2, arg3)
+
+            let mut kport = UartPort::from(port);
+            kport.set_ops(&UART_OPS);
+            let port_ptr = port_warp.into_raw();
+            pdev.dev.driver_data = port_ptr as _;
+
+
+            pr_println!("add_one_port begin");
+            UART_DRIVER.add_one_port(&kport)?;
         }
         pr_println!("probe finish");
         Ok(0)

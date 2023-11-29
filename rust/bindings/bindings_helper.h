@@ -51,6 +51,7 @@
 #include <linux/rational.h>
 #include <linux/slab.h>
 #include <linux/of.h>
+#include <linux/of_irq.h>
 #include <linux/io.h>
 #include <linux/dma-mapping.h>
 #include <asm/irq.h>
