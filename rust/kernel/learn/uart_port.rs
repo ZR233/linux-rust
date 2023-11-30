@@ -25,6 +25,7 @@ impl UartPort {
         }
     }
 
+
     // pub const fn zero() -> Self {
     //     Self(uart_port {
     //         lock: spinlock {
@@ -116,7 +117,7 @@ impl UartPort {
     //     })
     // }
 
-    pub(crate) unsafe fn as_ptr(&self) -> *mut uart_port {
+    pub unsafe fn as_ptr(&self) -> *mut uart_port {
         &self.0 as *const _ as _
     }
 
