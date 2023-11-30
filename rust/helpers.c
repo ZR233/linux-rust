@@ -21,6 +21,7 @@
  */
 
 #include "asm/sbi.h"
+#include "linux/serial_core.h"
 #include <kunit/test-bug.h>
 #include <linux/bug.h>
 #include <linux/build_bug.h>
@@ -167,6 +168,17 @@ void rust_helper_sbi_console_put(int ch)
 	sbi_ecall(0x01, 0, ch, 0, 0, 0, 0, 0);
 }
 EXPORT_SYMBOL_GPL(rust_helper_sbi_console_put);
+
+
+
+struct uart_port rust_helper_uart_port_zero(int v)
+{
+	struct uart_port a={};
+	return a;
+}
+EXPORT_SYMBOL_GPL(rust_helper_uart_port_zero);
+
+
 /*
  * `bindgen` binds the C `size_t` type as the Rust `usize` type, so we can
  * use it in contexts where Rust expects a `usize` like slice (array) indices.

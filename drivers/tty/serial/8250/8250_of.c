@@ -89,38 +89,38 @@ static int of_platform_serial_setup(struct platform_device *ofdev,
 		}
 
 		port->iotype = UPIO_MEM;
-		if (of_property_read_u32(np, "reg-io-width", &prop) == 0) {
-			switch (prop) {
-			case 1:
-				port->iotype = UPIO_MEM;
-				break;
-			case 2:
-				port->iotype = UPIO_MEM16;
-				break;
-			case 4:
-				port->iotype = of_device_is_big_endian(np) ?
-					       UPIO_MEM32BE : UPIO_MEM32;
-				break;
-			default:
-				ret = dev_err_probe(dev, -EINVAL, "unsupported reg-io-width (%u)\n",
-						    prop);
-				goto err_pmruntime;
-			}
-		}
+		// if (of_property_read_u32(np, "reg-io-width", &prop) == 0) {
+		// 	switch (prop) {
+		// 	case 1:
+		// 		port->iotype = UPIO_MEM;
+		// 		break;
+		// 	case 2:
+		// 		port->iotype = UPIO_MEM16;
+		// 		break;
+		// 	case 4:
+		// 		port->iotype = of_device_is_big_endian(np) ?
+		// 			       UPIO_MEM32BE : UPIO_MEM32;
+		// 		break;
+		// 	default:
+		// 		ret = dev_err_probe(dev, -EINVAL, "unsupported reg-io-width (%u)\n",
+		// 				    prop);
+		// 		goto err_pmruntime;
+		// 	}
+		// }
 		port->flags |= UPF_IOREMAP;
 	}
 
 	/* Compatibility with the deprecated pxa driver and 8250_pxa drivers. */
-	if (of_device_is_compatible(np, "mrvl,mmp-uart"))
-		port->regshift = 2;
+	// if (of_device_is_compatible(np, "mrvl,mmp-uart"))
+	// 	port->regshift = 2;
 
-	/* Check for registers offset within the devices address range */
-	if (of_property_read_u32(np, "reg-shift", &prop) == 0)
-		port->regshift = prop;
+	// /* Check for registers offset within the devices address range */
+	// if (of_property_read_u32(np, "reg-shift", &prop) == 0)
+	// 	port->regshift = prop;
 
-	/* Check for fifo size */
-	if (of_property_read_u32(np, "fifo-size", &prop) == 0)
-		port->fifosize = prop;
+	// /* Check for fifo size */
+	// if (of_property_read_u32(np, "fifo-size", &prop) == 0)
+	// 	port->fifosize = prop;
 
 	/* Check for a fixed line number */
 	ret = of_alias_get_id(np, "serial");

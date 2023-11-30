@@ -45,7 +45,17 @@ module! {
     license: "GPL",
 }
 static CONSOLE: Console = unsafe { Console::new(UART_DRIVER.as_ptr()) };
-
+static mut PORTS: [UartPort; NR as usize] = unsafe{ [UartPort::zero(); NR as usize]};
+// static PORT: uart_port = unsafe {
+//     uart_port {
+//         type_: uart_type::UART_PORT_TYPE_RS232,
+//         uart_port_ops: UART_OPS.as_ptr(),
+//         uart_port_data: null_mut(),
+//         uart_port_lock: new_spinlock(),
+//         uart_port_flags: 0,
+//         uart_port_line: 0,
+//     }
+// };
 
 static UART_DRIVER: UartDriver = unsafe {
     UartDriver::from_struct(uart_driver {
@@ -79,12 +89,12 @@ impl Console {
         Self(console {
             name,
             write: Some(console_write),
-            read: None,
+            read: Some(console_read),
             device: Some(uart_console_device),
             unblank: None,
             setup: Some(console_setup),
             exit: None,
-            match_: None,
+            match_: Some(console_match),
             flags: (cons_flags_CON_PRINTBUFFER | cons_flags_CON_ANYTIME) as _,
             index: -1,
             cflag: 0,
@@ -113,19 +123,50 @@ unsafe impl Send for Console {}
 unsafe impl Sync for Console {}
 
 extern "C" fn console_write(co: *mut console, char: *const i8, count: u32) {
+    pr_println!("console write");
     unsafe {
         let bytes = &*slice_from_raw_parts(char, count as _);
         print_bytes(bytes);
     }
 }
+extern "C" fn console_read(co: *mut console, char: *mut i8, count: u32) -> i32{
+
+    pr_println!("console read");
+    unsafe {
+        let bytes = &*slice_from_raw_parts(char, count as _);
+        print_bytes(bytes);
+    }
+    0
+}
+
 extern "C" fn console_setup(co: *mut console, options: *mut i8) -> i32 {
     unsafe {
         let op = CStr::from_char_ptr(options);
-
         pr_println!("console setup: {}", op.to_str().unwrap());
     }
     0
 }
+extern "C" fn console_match(co: *mut console, name: *mut i8,index: i32,options: *mut i8) -> i32{
+
+    pr_println!("console match");
+
+    unsafe{
+        
+
+
+
+
+    }
+
+
+
+
+    0
+
+}
+
+
+
 impl kernel::Module for RustUartModule {
     fn init(module: &'static ThisModule) -> Result<Self> {
         pr_println!("Rust UART (init)");
@@ -207,16 +248,16 @@ extern "C" fn probe(pl_dev: *mut platform_device) -> i32 {
             port.regshift = 0;
             port.dev = dev;
 
-            platform_get_resource(pdev, arg2, arg3)
+            // platform_get_resource(pdev, arg2, arg3);
 
-            let mut kport = UartPort::from(port);
-            kport.set_ops(&UART_OPS);
-            let port_ptr = port_warp.into_raw();
-            pdev.dev.driver_data = port_ptr as _;
+            // let mut kport = UartPort::from(port);
+            // kport.set_ops(&UART_OPS);
+            // let port_ptr = port_warp.into_raw();
+            // pdev.dev.driver_data = port_ptr as _;
 
 
-            pr_println!("add_one_port begin");
-            UART_DRIVER.add_one_port(&kport)?;
+            // pr_println!("add_one_port begin");
+            // UART_DRIVER.add_one_port(&kport)?;
         }
         pr_println!("probe finish");
         Ok(0)
@@ -262,5 +303,34 @@ fn new_of_device_id(comp: &CStr, data: u32) -> of_device_id {
         compatible,
         type_: [0; 32],
         data: data as _,
+    }
+}
+///static initcall_t __initcall__kmod_8250__2_721_univ8250_console_initcon
+///    __attribute__((__used__))
+///    __attribute__((__section__(".con_initcall"
+///                   ".init"))) = univ8250_console_init;
+#[doc(hidden)]
+#[link_section = ".con_initcall.init"]
+#[used]
+pub static __Rust_UART_con_initcall: extern "C" fn() -> core::ffi::c_int = __Rust_UART_console_init;
+
+
+#[doc(hidden)]
+#[no_mangle]
+pub extern "C" fn __Rust_UART_console_init() -> core::ffi::c_int {
+
+    console_init();    
+    0
+}
+
+
+
+fn console_init(){
+    pr_println!("console init");
+
+
+    unsafe{
+        register_console(CONSOLE.as_ptr());
+        pr_println!("console register ok");
     }
 }

@@ -833,7 +833,7 @@ EXPORT_SYMBOL(serial8250_resume_port);
  */
 static int serial8250_probe(struct platform_device *dev)
 {
-	pr_info("Serial: probe");
+	pr_info("Serial core: probe");
 	struct plat_serial8250_port *p = dev_get_platdata(&dev->dev);
 	struct uart_8250_port uart;
 	int ret, i, irqflag = 0;
