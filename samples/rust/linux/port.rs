@@ -10,11 +10,7 @@ use kernel::prelude::*;
 use kernel::sync::*;
 use kernel::{bindings::*, init::PinInit};
 
-#[pin_data]
-pub(crate) struct PortWarp {
-    #[pin]
-    rport: SpinLock<RPort>,
-}
+
 
 #[no_mangle]
 extern "C" fn tx_empty(port: *mut uart_port) -> u32 {
@@ -56,10 +52,19 @@ extern "C" fn type_(port: *mut uart_port) -> *const i8 {
 }
 #[no_mangle]
 extern "C" fn config_port(port: *mut uart_port, flags: i32) {
-    pr_println!("config_port {}", flags);
+    unsafe {
+        let port = &mut *port;
+        pr_println!("config_port [{}]", port.port_id);
+
+
+        port.iotype= 2;
+        
+
+
+
+    }
 }
 pub(crate) static UART_OPS: UartOps = unsafe {
-
     UartOps::from_struct(uart_ops {
         tx_empty: Some(tx_empty),
         set_mctrl: Some(set_mctrl),
@@ -88,12 +93,3 @@ pub(crate) static UART_OPS: UartOps = unsafe {
     })
 };
 
-
-
-impl PortWarp {
-    pub(crate) fn new() -> Result<impl PinInit<Self>> {
-        Ok(pin_init!(Self {
-            rport<- new_spinlock!(RPort::new())
-        }))
-    }
-}

@@ -11,6 +11,7 @@
  *  membase is an 'ioremapped' cookie.
  */
 
+#include "linux/printk.h"
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/ioport.h>
@@ -3195,6 +3196,8 @@ static void serial8250_config_port(struct uart_port *port, int flags)
 {
 	struct uart_8250_port *up = up_to_u8250p(port);
 	int ret;
+
+	pr_info("config_port iotype %d", port->iotype);
 
 	/*
 	 * Find the region that we can probe for.  This in turn

@@ -9,10 +9,8 @@ pub mod linux;
 /// rport
 pub mod rport;
 mod sbi_print;
-use crate::linux::port::PortWarp;
 use crate::linux::port::UART_OPS;
-use crate::rport::uart_port_init;
-use crate::rport::RPort;
+use crate::rport::*;
 pub use crate::sbi_print::*;
 use core::convert::AsRef;
 use core::default::Default;
@@ -132,8 +130,12 @@ extern "C" fn console_read(co: *mut console, char: *mut i8, count: u32) -> i32 {
 
 extern "C" fn console_setup(co: *mut console, options: *mut i8) -> i32 {
     unsafe {
+        let co = &mut *co;
+        let index = co.index as usize;
         let op = CStr::from_char_ptr(options);
-        pr_println!("console setup: {}", op.to_str().unwrap());
+        pr_println!("console {index} setup: {}", op.to_str().unwrap());
+        let port = up_from_kport( &PORTS[index]);
+        
     }
     0
 }
@@ -149,13 +151,6 @@ fn u8250_console_setup(port: &mut uart_port, options: *mut i8, early: bool) -> R
         return Err(code::ENODEV);
     }
     unsafe {
-        // to_result(of_address_to_resource(np, 0, &mut resource))?;
-        // if !options.is_null() {
-        //     uart_parse_options(options, &mut baud, &mut parity, &mut bits, &mut flow);
-        // }
-
-        // to_result(uart_set_options(port, port.cons, baud, parity, bits, flow))?;
-
         if !port.dev.is_null() {
             to_result(__pm_runtime_resume(port.dev, RPM_GET_PUT as _))?;
         }
@@ -174,43 +169,19 @@ extern "C" fn console_match(co: *mut console, name: *mut i8, index: i32, options
             pr_println!("options:{}", options_str);
         }
 
-        // if !name.starts_with("ttyS") {
-        //     return Err(code::ENODEV);
-        // }
         let mut iotype = 0;
         let mut addr = 0;
 
-        // to_result(uart_parse_earlycon(
-        //     options,
-        //     &mut iotype,
-        //     &mut addr,
-        //     &mut options_new.as_mut_ptr(),
-        // ))?;
-
         /* try to match the port specified on the command line */
-        for (i, port_w) in PORTS.iter().enumerate() {
+        for i in 0..NR as usize {
+            let port_w = &PORTS[i];
             let port = &mut *port_w.as_ptr();
 
-            // if port.iotype != iotype {
-            //     continue;
-            // }
-
-            //     let iotype = iotype as u32;
-
-            //     if (iotype == UPIO_MEM
-            //         || iotype == UPIO_MEM16
-            //         || iotype == UPIO_MEM32
-            //         || iotype == UPIO_MEM32BE)
-            //         && (port.mapbase != addr)
-            //     {
-            //         continue;
-            //     }
-            //     if iotype == UPIO_PORT && port.iobase != addr {
-            //         continue;
-            //     }
-            (&mut *co).index = i as _;
+            let index = i as i16;
+            (&mut *co).index = index;
             port.cons = co;
-            // u8250_console_setup(port, options, true)?;
+            pr_println!("use port {index} as console");
+
             return Ok(0);
         }
         Ok(0)
@@ -271,15 +242,15 @@ extern "C" fn probe(pl_dev: *mut platform_device) -> i32 {
             let np = pdev.dev.of_node;
             let dev = &mut pdev.dev as *mut _;
             let name = CStr::from_char_ptr(pdev.name);
-            pr_println!(
-                "probe: {} platform_data: {:p} driver_data: {:p}",
-                name,
-                pdev.dev.platform_data,
-                pdev.dev.driver_data
-            );
+            let co = &*CONSOLE.as_ptr();
+            let index = co.index as i32;
+            pr_println!("probe: {}, console=[{}]", name, index);
 
             let mut resource = resource::default();
-            let kport = &PORTS[0];
+
+            let index = if index < 0 { 0 } else { index as usize };
+
+            let kport = &PORTS[index];
             let port = &mut *kport.as_ptr();
 
             to_result(of_address_to_resource(np, 0, &mut resource))?;
@@ -295,13 +266,25 @@ extern "C" fn probe(pl_dev: *mut platform_device) -> i32 {
             port.mapbase = resource.start;
             port.mapsize = resource.end - resource.start + 1;
             port.iotype = UPIO_MEM as _;
+            port.flags = UPF_SHARE_IRQ | UPF_BOOT_AUTOCONF | UPF_FIXED_PORT | UPF_FIXED_TYPE;
+
+            spin_lock_init(&mut port.lock);
             // platform_get_resource(pdev, arg2, arg3);
 
+            // RPort::new(kport)?;
+            let p = RPort::new(index as usize)?;
+            let ptr = Box::into_raw(p);
+   
+            (&mut *port.dev).driver_data = ptr as _;
+
+            // let rport_ptr = Box::into_raw(rport);
             // let mut kport = UartPort::from(port);
             // kport.set_ops(&UART_OPS);
             // let port_ptr = port_warp.into_raw();
             // pdev.dev.driver_data = port_ptr as _;
+            // pdev.dev.driver_data = rport_ptr as _;
 
+            port.flags |= UPF_IOREMAP;
             pr_println!("add_one_port begin");
             UART_DRIVER.add_one_port(kport)?;
         }

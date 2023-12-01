@@ -1,5 +1,6 @@
 pub mod port;
 use kernel::error::*;
+use kernel::bindings::*;
 
 /// Calls a closure returning a [`crate::error::Result<T>`] and converts the result to
 /// a C integer result.
@@ -40,3 +41,30 @@ where
     }
 }
 
+pub(crate) struct Serial8250Config{
+    pub(crate) name: &'static str,
+    pub(crate) fifo_size: u32,
+    pub(crate) tx_loadsz: u32,
+    pub(crate) fcr: u32,
+    pub(crate) rxtrig_bytes: [u32; 4],
+    pub(crate) flags: u32,
+}
+
+impl Serial8250Config{
+		/// .name		= "16550A",
+		/// .fifo_size	= 16,
+		/// .tx_loadsz	= 16,
+		/// .fcr		= UART_FCR_ENABLE_FIFO | UART_FCR_R_TRIG_10,
+		/// .rxtrig_bytes	= {1, 4, 8, 14},
+		/// .flags		= UART_CAP_FIFO,
+    pub(crate) fn ns16550a() -> Self{
+        Serial8250Config{
+            name: "16550A",
+            fifo_size: 16,
+            tx_loadsz: 16,
+            fcr: UART_FCR_ENABLE_FIFO | UART_FCR_R_TRIG_10,
+            rxtrig_bytes: [1, 4, 8, 14],
+            flags: UART_CAP_FIFO,
+        }
+    }
+} 
