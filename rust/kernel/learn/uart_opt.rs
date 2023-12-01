@@ -12,7 +12,7 @@ impl UartOps {
         Self(value)
     }
 
-    pub(crate) unsafe fn as_ptr(&self)->*const uart_ops{
+    pub unsafe fn as_ptr(&self)->*const uart_ops{
         &self.0
     }
 }

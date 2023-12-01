@@ -22,6 +22,7 @@
 
 #include "asm/sbi.h"
 #include "linux/serial_core.h"
+#include "linux/spinlock_types.h"
 #include <kunit/test-bug.h>
 #include <linux/bug.h>
 #include <linux/build_bug.h>
@@ -33,7 +34,6 @@
 #include <linux/spinlock.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
-
 
 __noreturn void rust_helper_BUG(void)
 {
@@ -160,24 +160,24 @@ void rust_helper_init_work_with_key(struct work_struct *work, work_func_t func,
 }
 EXPORT_SYMBOL_GPL(rust_helper_init_work_with_key);
 
-
-
-
 void rust_helper_sbi_console_put(int ch)
 {
 	sbi_ecall(0x01, 0, ch, 0, 0, 0, 0, 0);
 }
 EXPORT_SYMBOL_GPL(rust_helper_sbi_console_put);
 
-
+void rust_helper_spin_lock_init(spinlock_t *lock)
+{
+	spin_lock_init(lock);
+}
+EXPORT_SYMBOL_GPL(rust_helper_spin_lock_init);
 
 struct uart_port rust_helper_uart_port_zero(int v)
 {
-	struct uart_port a={};
+	struct uart_port a = {};
 	return a;
 }
 EXPORT_SYMBOL_GPL(rust_helper_uart_port_zero);
-
 
 /*
  * `bindgen` binds the C `size_t` type as the Rust `usize` type, so we can
@@ -195,8 +195,6 @@ EXPORT_SYMBOL_GPL(rust_helper_uart_port_zero);
  * your platform such that `size_t` matches `uintptr_t` (i.e., to increase
  * `size_t`, because `uintptr_t` has to be at least as big as `size_t`).
  */
-static_assert(
-	sizeof(size_t) == sizeof(uintptr_t) &&
-	__alignof__(size_t) == __alignof__(uintptr_t),
-	"Rust code expects C `size_t` to match Rust `usize`"
-);
+static_assert(sizeof(size_t) == sizeof(uintptr_t) &&
+		      __alignof__(size_t) == __alignof__(uintptr_t),
+	      "Rust code expects C `size_t` to match Rust `usize`");

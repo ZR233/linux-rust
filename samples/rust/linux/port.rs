@@ -4,6 +4,7 @@ use core::default::Default;
 use kernel::c_str;
 use kernel::error::*;
 use kernel::learn::uart_opt::*;
+use kernel::learn::uart_port::UartPort;
 use kernel::new_spinlock;
 use kernel::prelude::*;
 use kernel::sync::*;
@@ -86,6 +87,9 @@ pub(crate) static UART_OPS: UartOps = unsafe {
         ioctl: None,
     })
 };
+
+
+
 impl PortWarp {
     pub(crate) fn new() -> Result<impl PinInit<Self>> {
         Ok(pin_init!(Self {

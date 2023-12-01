@@ -47,17 +47,6 @@ module! {
 }
 static CONSOLE: Console = unsafe { Console::new(UART_DRIVER.as_ptr()) };
 static mut PORTS: [UartPort; NR as usize] = unsafe { [UartPort::zero(); NR as usize] };
-// static PORT: uart_port = unsafe {
-//     uart_port {
-//         type_: uart_type::UART_PORT_TYPE_RS232,
-//         uart_port_ops: UART_OPS.as_ptr(),
-//         uart_port_data: null_mut(),
-//         uart_port_lock: new_spinlock(),
-//         uart_port_flags: 0,
-//         uart_port_line: 0,
-//     }
-// };
-
 static UART_DRIVER: UartDriver = unsafe {
     UartDriver::from_struct(uart_driver {
         nr: NR,
@@ -126,10 +115,10 @@ unsafe impl Send for Console {}
 unsafe impl Sync for Console {}
 
 extern "C" fn console_write(co: *mut console, char: *const i8, count: u32) {
-    pr_println!("console write");
+    // pr_println!("console write");
     unsafe {
-        let bytes = &*slice_from_raw_parts(char, count as _);
-        print_bytes(bytes);
+        // let bytes = &*slice_from_raw_parts(char, count as _);
+        // print_bytes(bytes);
     }
 }
 extern "C" fn console_read(co: *mut console, char: *mut i8, count: u32) -> i32 {
@@ -154,16 +143,18 @@ fn u8250_console_setup(port: &mut uart_port, options: *mut i8, early: bool) -> R
     let mut bits = 8;
     let mut parity = 'n' as i32;
     let mut flow = 'n' as i32;
+    // let mut resource = resource::default();
 
     if (port.iobase == 0 && port.membase.is_null()) {
         return Err(code::ENODEV);
     }
     unsafe {
-        if !options.is_null() {
-            uart_parse_options(options, &mut baud, &mut parity, &mut bits, &mut flow);
-        }
+        // to_result(of_address_to_resource(np, 0, &mut resource))?;
+        // if !options.is_null() {
+        //     uart_parse_options(options, &mut baud, &mut parity, &mut bits, &mut flow);
+        // }
 
-        to_result(uart_set_options(port, port.cons, baud, parity, bits, flow))?;
+        // to_result(uart_set_options(port, port.cons, baud, parity, bits, flow))?;
 
         if !port.dev.is_null() {
             to_result(__pm_runtime_resume(port.dev, RPM_GET_PUT as _))?;
@@ -219,7 +210,7 @@ extern "C" fn console_match(co: *mut console, name: *mut i8, index: i32, options
             //     }
             (&mut *co).index = i as _;
             port.cons = co;
-            u8250_console_setup(port, options, true)?;
+            // u8250_console_setup(port, options, true)?;
             return Ok(0);
         }
         Ok(0)
@@ -287,13 +278,11 @@ extern "C" fn probe(pl_dev: *mut platform_device) -> i32 {
                 pdev.dev.driver_data
             );
 
-            let port = PortWarp::new()?;
-            let port_warp: Arc<PortWarp> = Arc::pin_init(port)?;
-            let mut port = uart_port {
-                line: 0,
-                port_id: 0,
-                ..Default::default()
-            };
+            let mut resource = resource::default();
+            let kport = &PORTS[0];
+            let port = &mut *kport.as_ptr();
+
+            to_result(of_address_to_resource(np, 0, &mut resource))?;
 
             pm_runtime_enable(dev);
             __pm_runtime_resume(dev, RPM_GET_PUT as _);
@@ -303,6 +292,9 @@ extern "C" fn probe(pl_dev: *mut platform_device) -> i32 {
             port.regshift = 0;
             port.dev = dev;
 
+            port.mapbase = resource.start;
+            port.mapsize = resource.end - resource.start + 1;
+            port.iotype = UPIO_MEM as _;
             // platform_get_resource(pdev, arg2, arg3);
 
             // let mut kport = UartPort::from(port);
@@ -310,8 +302,8 @@ extern "C" fn probe(pl_dev: *mut platform_device) -> i32 {
             // let port_ptr = port_warp.into_raw();
             // pdev.dev.driver_data = port_ptr as _;
 
-            // pr_println!("add_one_port begin");
-            // UART_DRIVER.add_one_port(&kport)?;
+            pr_println!("add_one_port begin");
+            UART_DRIVER.add_one_port(kport)?;
         }
         pr_println!("probe finish");
         Ok(0)
@@ -379,8 +371,9 @@ fn console_init() {
     pr_println!("console init");
 
     unsafe {
-        for one in &PORTS {
-            uart_port_init(one);
+        for i in 0..NR as usize {
+            let one = &PORTS[i];
+            uart_port_init(i as _, one);
         }
 
         register_console(CONSOLE.as_ptr());
