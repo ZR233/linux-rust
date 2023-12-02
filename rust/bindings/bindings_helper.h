@@ -15,7 +15,6 @@
 #include <linux/workqueue.h>
 #include <linux/module.h>
 #include <linux/acpi.h>
-#include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/ioport.h>
 #include <linux/init.h>
@@ -60,6 +59,7 @@
 #include <linux/dma/imx-dma.h>
 #include <linux/nmi.h>
 #include <linux/serial.h>
+
 
 /* `bindgen` gets confused at certain things. */
 const size_t RUST_CONST_HELPER_ARCH_SLAB_MINALIGN = ARCH_SLAB_MINALIGN;

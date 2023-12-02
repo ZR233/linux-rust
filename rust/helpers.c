@@ -38,6 +38,7 @@
 #include <linux/spinlock.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
+#include <linux/device.h>
 
 __noreturn void rust_helper_BUG(void)
 {
@@ -232,6 +233,26 @@ void rust_helper_writeb(int value, unsigned char *addr)
 }
 EXPORT_SYMBOL_GPL(rust_helper_writeb);
 
+
+static ssize_t rx_trig_bytes_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	return 0;
+}
+
+
+
+static ssize_t rx_trig_bytes_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	return 0;
+}
+static DEVICE_ATTR_RW(rx_trig_bytes);
+struct device_attribute * rust_helper_dev_attr_rx_trig_bytes(int a)
+{
+	return &dev_attr_rx_trig_bytes ;
+}
+EXPORT_SYMBOL_GPL(rust_helper_dev_attr_rx_trig_bytes);
 /*
  * `bindgen` binds the C `size_t` type as the Rust `usize` type, so we can
  * use it in contexts where Rust expects a `usize` like slice (array) indices.

@@ -29,12 +29,21 @@ use kernel::prelude::*;
 use kernel::str::CString;
 use kernel::sync::*;
 
-const NR: i32 = 4;
+pub(crate) const NR: i32 = 4;
 const TTY_MAJOR: i32 = 4;
 const TTY_MINOR: i32 = 64;
 const DEV_NAME: &CStr = c_str!("ttySZ");
 const DRIVER_NAME: &CStr = c_str!("serial");
 const PLATFORM_DRIVER_NAME: &CStr = c_str!("serial8250");
+
+///static initcall_t __initcall__kmod_8250__2_721_univ8250_console_initcon
+///    __attribute__((__used__))
+///    __attribute__((__section__(".con_initcall"
+///                   ".init"))) = univ8250_console_init;
+#[doc(hidden)]
+#[link_section = ".con_initcall.init"]
+#[used]
+pub static __Rust_UART_con_initcall: extern "C" fn() -> core::ffi::c_int = __Rust_UART_console_init;
 
 module! {
     type: RustUartModule,
@@ -45,8 +54,6 @@ module! {
 }
 static CONSOLE: Console = unsafe { Console::new(UART_DRIVER.as_ptr()) };
 pub(crate) static mut PORTS: [UartPort; NR as usize] = unsafe { [UartPort::zero(); NR as usize] };
-// pub(crate) static mut RPORTS: [RPort; NR as usize] = unsafe { [RPort::zero(); NR as usize] };
-
 
 pub(crate) static UART_DRIVER: UartDriver = unsafe {
     UartDriver::from_struct(uart_driver {
@@ -162,15 +169,21 @@ extern "C" fn console_read(co: *mut console, char: *mut i8, count: u32) -> i32 {
 extern "C" fn console_setup(co: *mut console, options: *mut i8) -> i32 {
     from_result(|| unsafe {
         let co = &mut *co;
-        let index = co.index as usize;
-        let op = CStr::from_char_ptr(options);
-        pr_println!("console {index} setup: {}", op.to_str().unwrap());
+        let index = if co.index < 0 { 0 } else { co.index as usize };
+
+        pr_println!("console {index} setup:");
 
         let uport = &PORTS[index];
-
         let rport = RPort::ref_from_kport(uport);
-
-        Ok(0)
+        let port = &mut *uport.as_ptr();
+        port.cons = co;
+        match u8250_console_setup(co, uport, options, false) {
+            core::result::Result::Ok(_) => Ok(0),
+            core::result::Result::Err(e) => {
+                port.cons = null_mut();
+                Err(e)
+            }
+        }
     })
 }
 
@@ -180,6 +193,12 @@ fn u8250_console_setup(
     options: *mut i8,
     early: bool,
 ) -> Result {
+    unsafe {
+        let port = &mut *uport.as_ptr();
+        if port.iobase == 0 && port.membase.is_null() {
+            return Err(code::ENODEV);
+        }
+    }
     let mut uopt = uport
         .uart_parse_options(options)
         .unwrap_or_else(|| UartOptions {
@@ -200,6 +219,10 @@ extern "C" fn console_match(co: *mut console, name: *mut i8, index: i32, options
     from_result(|| unsafe {
         let name = CStr::from_char_ptr(name).to_str().unwrap();
         pr_println!("console match name:{}", name);
+
+        if !name.starts_with("uart") {
+            return Err(code::ENODEV);
+        }
 
         let mut iotype = 0;
         let mut addr = 0;
@@ -224,6 +247,7 @@ impl kernel::Module for RustUartModule {
     fn init(module: &'static ThisModule) -> Result<Self> {
         pr_println!("Rust UART (init)");
         let of = OfDeviceIdList(of_device_id_list());
+        init_dev_attr();
 
         pr_println!("uart register begin");
         UART_DRIVER.register(module)?;
@@ -274,13 +298,15 @@ extern "C" fn probe(pl_dev: *mut platform_device) -> i32 {
             let np = pdev.dev.of_node;
             let dev = &mut pdev.dev as *mut _;
             let name = CStr::from_char_ptr(pdev.name);
-            let co = &*CONSOLE.as_ptr();
+            let co = &mut *CONSOLE.as_ptr();
             let index = co.index as i32;
             pr_println!("probe: {}, console=[{}]", name, index);
 
             let index = if index < 0 { 0 } else { index as usize };
 
             let kport = &PORTS[index];
+            let port = &mut *kport.as_ptr();
+            port.cons = co;
 
             pm_runtime_enable(dev);
             __pm_runtime_resume(dev, RPM_GET_PUT as _);
@@ -333,14 +359,6 @@ fn new_of_device_id(comp: &CStr, data: u32) -> of_device_id {
         data: data as _,
     }
 }
-///static initcall_t __initcall__kmod_8250__2_721_univ8250_console_initcon
-///    __attribute__((__used__))
-///    __attribute__((__section__(".con_initcall"
-///                   ".init"))) = univ8250_console_init;
-#[doc(hidden)]
-#[link_section = ".con_initcall.init"]
-#[used]
-pub static __Rust_UART_con_initcall: extern "C" fn() -> core::ffi::c_int = __Rust_UART_console_init;
 
 #[doc(hidden)]
 #[no_mangle]

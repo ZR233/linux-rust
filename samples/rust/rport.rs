@@ -1,8 +1,11 @@
 use core::cell::UnsafeCell;
+use core::mem::size_of;
+use core::ptr::null_mut;
 
 use crate::linux::port::*;
 use crate::linux::*;
 use crate::pr_println;
+use crate::NR;
 use crate::PORTS;
 use crate::UART_DRIVER;
 use kernel::bindings::*;
@@ -19,6 +22,49 @@ use kernel::sync::lock::Guard;
 use kernel::{
     init::InPlaceInit, init::PinInit, new_spinlock, pin_init, spin_lock_init, sync::SpinLock,
 };
+
+static mut RPORTS: [PortWarpper; NR as usize] =
+    unsafe { [PortWarpper { port: null_mut() }; NR as usize] };
+static mut DEV_ATTRS: [*mut attribute; 2] = [null_mut(), null_mut()];
+static mut DEV_ATTR_GROUP: *mut AG = null_mut();
+
+struct AG(attribute_group);
+impl AG {
+    fn new(attrs: *mut *mut attribute) -> Result<Box<Self>, kernel::error::Error> {
+        let s = Self(attribute_group {
+            attrs,
+            ..Default::default()
+        });
+
+        Box::try_init(s)
+    }
+
+
+}
+
+pub(crate) fn init_dev_attr() {
+    unsafe {
+        let attr = (&*dev_attr_rx_trig_bytes(0)).attr;
+        DEV_ATTRS[0] = &attr as *const _ as *mut attribute;
+        let b:  Box<AG> = AG::new(DEV_ATTRS.as_mut_ptr()).unwrap();
+        let ptr = Box::into_raw(b);
+
+        DEV_ATTR_GROUP = ptr;
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PortWarpper {
+    port: *mut RPort,
+}
+impl PortWarpper {
+    fn init(&mut self, index: usize) -> Result {
+        let rport: Box<RPort> = RPort::new(index)?;
+        let ptr = Box::into_raw(rport);
+        self.port = ptr;
+        Ok(())
+    }
+}
 
 /// Rust Port
 #[derive(Default)]
@@ -89,9 +135,6 @@ impl Drop for SpinIrqSaveGuard {
     }
 }
 impl RPort {
-
-
-
     /// new a RPort
     pub fn new(index: usize) -> Result<Box<Self>> {
         let mut lock = spinlock_t::default();
@@ -165,6 +208,7 @@ impl RPort {
             port.uartclk = 0x00384000;
             port.regshift = 0;
             port.dev = dev;
+            port.type_ = PORT_16550A;
 
             port.mapbase = resource.start;
             port.mapsize = resource.end - resource.start + 1;
@@ -172,6 +216,12 @@ impl RPort {
             port.flags = UPF_SHARE_IRQ | UPF_BOOT_AUTOCONF | UPF_FIXED_PORT | UPF_FIXED_TYPE;
 
             spin_lock_init!(&mut port.lock);
+
+            to_result(uart_get_rs485_mode(port))?;
+
+            port.attr_group = &mut (&mut*DEV_ATTR_GROUP).0;
+            // has_acpi_companion
+            if !is_acpi_device_node((&*port.dev).fwnode) {}
 
             port.flags |= UPF_IOREMAP;
             pr_println!("add_one_port begin");
@@ -183,10 +233,8 @@ impl RPort {
 
     pub(crate) fn ref_from_port(p: *mut uart_port) -> &'static RPort {
         unsafe {
-            let port = &*p;
-            let ptr = (&*port.dev).driver_data as *const RPort;
-            let rport = &*ptr;
-            return rport;
+            let index = (&*p).port_id as usize;
+            get_port(index)
         }
     }
     pub(crate) fn ref_from_kport(p: &UartPort) -> &'static RPort {
@@ -354,12 +402,19 @@ pub(crate) fn uart_port_init(index: u32, port: &UartPort) {
         port.ctrl_id = 0;
         port.pm = None;
         port.ops = UART_OPS.as_ptr();
-        port.has_sysrq = b'1';
+        port.has_sysrq = 1 as _;
         port.serial_in = Some(serial_in);
         port.serial_out = Some(serial_out);
+        let index = index as usize;
 
-        pr_println!("port {index} init");
+        RPORTS[index].init(index);
+
+        pr_println!("port {} init", get_port(index).index);
     }
+}
+
+fn get_port(index: usize) -> &'static mut RPort {
+    unsafe { &mut *RPORTS[index].port }
 }
 
 extern "C" fn serial_in(port: *mut uart_port, offset: i32) -> u32 {

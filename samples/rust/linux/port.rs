@@ -63,6 +63,14 @@ extern "C" fn config_port(port: *mut uart_port, flags: i32) {
         RPort::config_port(port);
     }
 }
+extern "C" fn verify_port(port: *mut uart_port, ser: *mut serial_struct) ->i32{
+    unsafe {
+        pr_println!("verify_port");
+        0
+    }
+}
+
+
 pub(crate) static UART_OPS: UartOps = unsafe {
     UartOps::from_struct(uart_ops {
         tx_empty: Some(tx_empty),
@@ -87,7 +95,7 @@ pub(crate) static UART_OPS: UartOps = unsafe {
         pm: None,
         release_port: None,
         request_port: None,
-        verify_port: None,
+        verify_port: Some(verify_port),
         ioctl: None,
     })
 };
