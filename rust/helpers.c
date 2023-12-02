@@ -166,11 +166,30 @@ void rust_helper_sbi_console_put(int ch)
 }
 EXPORT_SYMBOL_GPL(rust_helper_sbi_console_put);
 
-void rust_helper_spin_lock_init(spinlock_t *lock)
+void rust_helper_spin_lock_irq(spinlock_t *lock)
 {
-	spin_lock_init(lock);
+	spin_lock_irq(lock);	
 }
-EXPORT_SYMBOL_GPL(rust_helper_spin_lock_init);
+EXPORT_SYMBOL_GPL(rust_helper_spin_lock_irq);
+
+void rust_helper_spin_unlock_irq(spinlock_t *lock)
+{
+	spin_unlock_irq(lock);	
+}
+EXPORT_SYMBOL_GPL(rust_helper_spin_unlock_irq);
+
+void rust_helper_spin_unlock_irqrestore(spinlock_t *lock, unsigned long flags)
+{
+	spin_unlock_irqrestore(lock, flags);	
+}
+EXPORT_SYMBOL_GPL(rust_helper_spin_unlock_irqrestore);
+
+void rust_helper_spin_lock_irqsave(spinlock_t *lock, unsigned long *flags)
+{
+	spin_lock_irqsave(lock, *flags);	
+}
+EXPORT_SYMBOL_GPL(rust_helper_spin_lock_irqsave);
+
 
 struct uart_port rust_helper_uart_port_zero(int v)
 {

@@ -1,58 +1,126 @@
 use crate::linux::port::*;
+use crate::linux::*;
 use crate::pr_println;
 use crate::UART_DRIVER;
 use kernel::bindings::*;
-use kernel::error::*;
 use kernel::c_str;
+use kernel::error::*;
 use kernel::learn::platform_driver::PlatformDriver;
 use kernel::learn::uart_opt::*;
 use kernel::learn::uart_port::UartPort;
 use kernel::macros::pin_data;
 use kernel::prelude::*;
-use kernel::sync::lock::Guard;
 use kernel::sync::lock::spinlock::SpinLockBackend;
-use kernel::{init::InPlaceInit, init::PinInit, new_spinlock, pin_init, sync::SpinLock};
-use crate::linux::*;
+use kernel::sync::lock::Guard;
+use kernel::{
+    init::InPlaceInit, init::PinInit, new_spinlock, pin_init, spin_lock_init, sync::SpinLock,
+};
 
+#[derive(Default)]
 pub struct RPort {
     pub index: usize,
-    inner: Pin<Box<InnerWapper>>,
+    lock: spinlock_t,
+    inner: Inner,
 }
-#[pin_data]
-struct InnerWapper {
-    #[pin]
-    inner: SpinLock<PortInner>,
-}
+
 #[derive(Default)]
-struct PortInner {
+struct Inner {
     fcr: u32,
     tx_loadsz: u32,
     flags: u32,
     rxtrig_bytes: [u32; 4],
 }
 
-impl InnerWapper {
-    fn new() -> impl PinInit<Self> {
-        pin_init!(Self {
-            inner <- new_spinlock!(PortInner {
-                ..Default::default()
-             }),
-        })
-    }
+struct SpinGuard {
+    c: SpinCommon,
+    irq: bool,
+}
+struct SpinCommon {
+    lock: *mut spinlock_t,
+    inner: *mut Inner,
 }
 
+impl SpinCommon {
+    fn as_ref_mut<'a>(&'a self) -> &'a mut Inner {
+        unsafe { &mut *self.inner }
+    }
+}
+impl SpinGuard {
+    fn as_ref_mut(&self) -> &mut Inner {
+        self.c.as_ref_mut()
+    }
+}
+impl Drop for SpinGuard {
+    fn drop(&mut self) {
+        unsafe {
+            if self.irq {
+                spin_unlock_irq(self.c.lock)
+            } else {
+                spin_unlock(self.c.lock)
+            }
+        }
+    }
+}
+struct SpinIrqSaveGuard {
+    c: SpinCommon,
+    flag: core::ffi::c_ulong,
+}
+impl SpinIrqSaveGuard {
+    fn as_ref_mut(&self) -> &mut Inner {
+        self.c.as_ref_mut()
+    }
+}
+impl Drop for SpinIrqSaveGuard {
+    fn drop(&mut self) {
+        unsafe { spin_unlock_irqrestore(self.c.lock, self.flag) }
+    }
+}
 impl RPort {
     pub fn new(index: usize) -> Result<Box<Self>> {
-        let inner = InnerWapper::new();
-        let b = Box::pin_init(inner)?;
-        let s = Self { index, inner: b };
+        let mut lock = spinlock_t::default();
+        unsafe {
+            spin_lock_init!(&mut lock);
+        }
+        let s = Self {
+            index,
+            lock,
+            ..Default::default()
+        };
 
         Box::try_init(s)
     }
-
-    fn lock(&self)-> Guard<'_, PortInner, SpinLockBackend>{
-        let i = self.inner.as_ref().get_ref();
-        i.inner.lock()
+    fn __lock(&self, irq: bool) -> SpinGuard {
+        unsafe {
+            let lock = &self.lock as *const _ as *mut _;
+            spin_lock(lock);
+            SpinGuard {
+                c: SpinCommon {
+                    lock,
+                    inner: &self.inner as *const _ as *mut _,
+                },
+                irq,
+            }
+        }
+    }
+    fn lock(&self) -> SpinGuard {
+        self.__lock(false)
+    }
+    fn lock_irq(&self) -> SpinGuard {
+        self.__lock(true)
+    }
+    fn lock_irqsave(&self) -> SpinIrqSaveGuard {
+        unsafe {
+            let lock = &self.lock as *const _ as *mut _;
+            let mut flag = 0;
+            spin_lock_irqsave(lock, &mut flag);
+            SpinIrqSaveGuard {
+                c: SpinCommon {
+                    lock,
+                    inner: &self.inner as *const _ as *mut _,
+                },
+                flag,
+            }
+        }
     }
 
     pub(crate) unsafe fn register(
@@ -79,7 +147,7 @@ impl RPort {
             port.iotype = UPIO_MEM as _;
             port.flags = UPF_SHARE_IRQ | UPF_BOOT_AUTOCONF | UPF_FIXED_PORT | UPF_FIXED_TYPE;
 
-            spin_lock_init(&mut port.lock);
+            spin_lock_init!(&mut port.lock);
 
             let p = RPort::new(index)?;
             let ptr = Box::into_raw(p);
@@ -113,9 +181,13 @@ impl RPort {
             let port_config = Serial8250Config::ns16550a();
             port.fifosize = port_config.fifo_size;
             port.name = port_config.name.as_char_ptr();
-            
+
             let port = RPort::ref_from_port(port);
-            let mut g = port.lock();
+
+            let guard = port.lock();
+            let g = guard.as_ref_mut();
+
+            // let mut g = port.lock();
             g.tx_loadsz = port_config.tx_loadsz;
             g.flags = port_config.flags;
             g.fcr = port_config.fcr;

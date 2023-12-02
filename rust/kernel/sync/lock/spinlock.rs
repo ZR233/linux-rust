@@ -4,8 +4,9 @@
 //!
 //! This module allows Rust code to use the kernel's `spinlock_t`.
 
-use crate::bindings;
-
+use crate::str::CStr;
+use crate::{bindings, stack_pin_init, sync::LockClassKey};
+use crate::bindings::spinlock_t;
 /// Creates a [`SpinLock`] initialiser with the given name and a newly-created lock class.
 ///
 /// It uses the name if one is given, otherwise it generates one based on the file name and line
@@ -17,6 +18,20 @@ macro_rules! new_spinlock {
             $inner, $crate::optional_name!($($name)?), $crate::static_lock_class!())
     };
 }
+
+#[macro_export]
+macro_rules! spin_lock_init{
+    ($ptr: expr $(, $name:literal)? $(,)?)=>{
+        kernel::sync::lock::spinlock::__spin_lock_init_raw($ptr, $crate::optional_name!($($name)?), $crate::static_lock_class!());
+    }
+}
+/// spin_lock_init
+pub fn __spin_lock_init_raw(lock: *mut spinlock_t, name: &CStr, key: &LockClassKey){
+    unsafe{
+        bindings::__spin_lock_init(lock, name.as_char_ptr(), key.as_ptr());
+    }
+}
+
 
 /// A spinlock.
 ///
