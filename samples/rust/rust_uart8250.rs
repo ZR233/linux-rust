@@ -45,7 +45,7 @@ module! {
 }
 static CONSOLE: Console = unsafe { Console::new(UART_DRIVER.as_ptr()) };
 static mut PORTS: [UartPort; NR as usize] = unsafe { [UartPort::zero(); NR as usize] };
-static UART_DRIVER: UartDriver = unsafe {
+pub(crate) static UART_DRIVER: UartDriver = unsafe {
     UartDriver::from_struct(uart_driver {
         nr: NR,
         major: TTY_MAJOR,
@@ -134,7 +134,7 @@ extern "C" fn console_setup(co: *mut console, options: *mut i8) -> i32 {
         let index = co.index as usize;
         let op = CStr::from_char_ptr(options);
         pr_println!("console {index} setup: {}", op.to_str().unwrap());
-        let port = up_from_kport( &PORTS[index]);
+        let port = RPort::ref_from_kport( &PORTS[index]);
         
     }
     0
@@ -246,47 +246,18 @@ extern "C" fn probe(pl_dev: *mut platform_device) -> i32 {
             let index = co.index as i32;
             pr_println!("probe: {}, console=[{}]", name, index);
 
-            let mut resource = resource::default();
 
             let index = if index < 0 { 0 } else { index as usize };
 
             let kport = &PORTS[index];
-            let port = &mut *kport.as_ptr();
 
-            to_result(of_address_to_resource(np, 0, &mut resource))?;
 
             pm_runtime_enable(dev);
             __pm_runtime_resume(dev, RPM_GET_PUT as _);
 
-            port.irq = of_irq_get(np, 0) as _;
-            port.uartclk = 0x00384000;
-            port.regshift = 0;
-            port.dev = dev;
+            RPort::register(index, kport, pdev)?;
 
-            port.mapbase = resource.start;
-            port.mapsize = resource.end - resource.start + 1;
-            port.iotype = UPIO_MEM as _;
-            port.flags = UPF_SHARE_IRQ | UPF_BOOT_AUTOCONF | UPF_FIXED_PORT | UPF_FIXED_TYPE;
 
-            spin_lock_init(&mut port.lock);
-            // platform_get_resource(pdev, arg2, arg3);
-
-            // RPort::new(kport)?;
-            let p = RPort::new(index as usize)?;
-            let ptr = Box::into_raw(p);
-   
-            (&mut *port.dev).driver_data = ptr as _;
-
-            // let rport_ptr = Box::into_raw(rport);
-            // let mut kport = UartPort::from(port);
-            // kport.set_ops(&UART_OPS);
-            // let port_ptr = port_warp.into_raw();
-            // pdev.dev.driver_data = port_ptr as _;
-            // pdev.dev.driver_data = rport_ptr as _;
-
-            port.flags |= UPF_IOREMAP;
-            pr_println!("add_one_port begin");
-            UART_DRIVER.add_one_port(kport)?;
         }
         pr_println!("probe finish");
         Ok(0)
