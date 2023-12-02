@@ -1,6 +1,8 @@
 pub mod port;
-use kernel::error::*;
 use kernel::bindings::*;
+use kernel::c_str;
+use kernel::error::*;
+use kernel::prelude::*;
 
 /// Calls a closure returning a [`crate::error::Result<T>`] and converts the result to
 /// a C integer result.
@@ -41,8 +43,8 @@ where
     }
 }
 
-pub(crate) struct Serial8250Config{
-    pub(crate) name: &'static str,
+pub(crate) struct Serial8250Config {
+    pub(crate) name: &'static CStr,
     pub(crate) fifo_size: u32,
     pub(crate) tx_loadsz: u32,
     pub(crate) fcr: u32,
@@ -50,16 +52,16 @@ pub(crate) struct Serial8250Config{
     pub(crate) flags: u32,
 }
 
-impl Serial8250Config{
-		/// .name		= "16550A",
-		/// .fifo_size	= 16,
-		/// .tx_loadsz	= 16,
-		/// .fcr		= UART_FCR_ENABLE_FIFO | UART_FCR_R_TRIG_10,
-		/// .rxtrig_bytes	= {1, 4, 8, 14},
-		/// .flags		= UART_CAP_FIFO,
-    pub(crate) fn ns16550a() -> Self{
-        Serial8250Config{
-            name: "16550A",
+impl Serial8250Config {
+    /// .name		= "16550A",
+    /// .fifo_size	= 16,
+    /// .tx_loadsz	= 16,
+    /// .fcr		= UART_FCR_ENABLE_FIFO | UART_FCR_R_TRIG_10,
+    /// .rxtrig_bytes	= {1, 4, 8, 14},
+    /// .flags		= UART_CAP_FIFO,
+    pub(crate) fn ns16550a() -> Self {
+        Serial8250Config {
+            name: c_str!("16550A"),
             fifo_size: 16,
             tx_loadsz: 16,
             fcr: UART_FCR_ENABLE_FIFO | UART_FCR_R_TRIG_10,
@@ -67,4 +69,4 @@ impl Serial8250Config{
             flags: UART_CAP_FIFO,
         }
     }
-} 
+}

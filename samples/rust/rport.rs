@@ -3,12 +3,16 @@ use crate::pr_println;
 use crate::UART_DRIVER;
 use kernel::bindings::*;
 use kernel::error::*;
+use kernel::c_str;
 use kernel::learn::platform_driver::PlatformDriver;
 use kernel::learn::uart_opt::*;
 use kernel::learn::uart_port::UartPort;
 use kernel::macros::pin_data;
 use kernel::prelude::*;
+use kernel::sync::lock::Guard;
+use kernel::sync::lock::spinlock::SpinLockBackend;
 use kernel::{init::InPlaceInit, init::PinInit, new_spinlock, pin_init, sync::SpinLock};
+use crate::linux::*;
 
 pub struct RPort {
     pub index: usize,
@@ -21,7 +25,10 @@ struct InnerWapper {
 }
 #[derive(Default)]
 struct PortInner {
-    cfr: u32,
+    fcr: u32,
+    tx_loadsz: u32,
+    flags: u32,
+    rxtrig_bytes: [u32; 4],
 }
 
 impl InnerWapper {
@@ -43,7 +50,16 @@ impl RPort {
         Box::try_init(s)
     }
 
-    pub(crate) unsafe fn register(index: usize, uport: &UartPort, pdev: *mut platform_device) -> Result {
+    fn lock(&self)-> Guard<'_, PortInner, SpinLockBackend>{
+        let i = self.inner.as_ref().get_ref();
+        i.inner.lock()
+    }
+
+    pub(crate) unsafe fn register(
+        index: usize,
+        uport: &UartPort,
+        pdev: *mut platform_device,
+    ) -> Result {
         let mut resource = resource::default();
         unsafe {
             let port = &mut *uport.as_ptr();
@@ -70,7 +86,6 @@ impl RPort {
 
             (&mut *port.dev).driver_data = ptr as _;
 
-
             port.flags |= UPF_IOREMAP;
             pr_println!("add_one_port begin");
             UART_DRIVER.add_one_port(uport)?;
@@ -89,6 +104,29 @@ impl RPort {
     }
     pub(crate) fn ref_from_kport(p: &UartPort) -> &'static RPort {
         unsafe { Self::ref_from_port(p.as_ptr()) }
+    }
+
+    pub(crate) fn config_port(p: *mut uart_port) {
+        unsafe {
+            let port = &mut *p;
+            port.iotype = 2;
+            let port_config = Serial8250Config::ns16550a();
+            port.fifosize = port_config.fifo_size;
+            port.name = port_config.name.as_char_ptr();
+            
+            let port = RPort::ref_from_port(port);
+            let mut g = port.lock();
+            g.tx_loadsz = port_config.tx_loadsz;
+            g.flags = port_config.flags;
+            g.fcr = port_config.fcr;
+            g.rxtrig_bytes = port_config.rxtrig_bytes;
+        }
+        pr_println!("config_port ok");
+    }
+
+    pub(crate) fn set_termios(port: *mut uart_port, k1: *mut ktermios, k2: *const ktermios) {}
+    pub(crate) fn startup(port: *mut uart_port) -> Result {
+        Ok(())
     }
 }
 

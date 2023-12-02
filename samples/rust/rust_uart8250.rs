@@ -134,8 +134,7 @@ extern "C" fn console_setup(co: *mut console, options: *mut i8) -> i32 {
         let index = co.index as usize;
         let op = CStr::from_char_ptr(options);
         pr_println!("console {index} setup: {}", op.to_str().unwrap());
-        let port = RPort::ref_from_kport( &PORTS[index]);
-        
+        let port = RPort::ref_from_kport(&PORTS[index]);
     }
     0
 }
@@ -246,18 +245,14 @@ extern "C" fn probe(pl_dev: *mut platform_device) -> i32 {
             let index = co.index as i32;
             pr_println!("probe: {}, console=[{}]", name, index);
 
-
             let index = if index < 0 { 0 } else { index as usize };
 
             let kport = &PORTS[index];
-
 
             pm_runtime_enable(dev);
             __pm_runtime_resume(dev, RPM_GET_PUT as _);
 
             RPort::register(index, kport, pdev)?;
-
-
         }
         pr_println!("probe finish");
         Ok(0)

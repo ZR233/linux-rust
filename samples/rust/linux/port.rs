@@ -10,8 +10,6 @@ use kernel::prelude::*;
 use kernel::sync::*;
 use kernel::{bindings::*, init::PinInit};
 
-
-
 #[no_mangle]
 extern "C" fn tx_empty(port: *mut uart_port) -> u32 {
     0
@@ -38,12 +36,20 @@ extern "C" fn stop_rx(port: *mut uart_port) {}
 #[no_mangle]
 extern "C" fn startup(port: *mut uart_port) -> i32 {
     pr_println!("startup");
-    0
+    from_result(|| {
+        RPort::startup(port)?;
+        Ok(0)
+    })
 }
 #[no_mangle]
 extern "C" fn shutdown(port: *mut uart_port) {}
 #[no_mangle]
-extern "C" fn set_termios(port: *mut uart_port, k1: *mut ktermios, k2: *const ktermios) {}
+extern "C" fn set_termios(port: *mut uart_port, k1: *mut ktermios, k2: *const ktermios) {
+    pr_println!("set_termios");
+    unsafe {
+        RPort::set_termios(port, k1, k2);
+    }
+}
 #[no_mangle]
 extern "C" fn type_(port: *mut uart_port) -> *const i8 {
     pr_println!("port type: {}", (*port).type_);
@@ -53,15 +59,8 @@ extern "C" fn type_(port: *mut uart_port) -> *const i8 {
 #[no_mangle]
 extern "C" fn config_port(port: *mut uart_port, flags: i32) {
     unsafe {
-        let port = &mut *port;
-        pr_println!("config_port [{}]", port.port_id);
-
-
-        port.iotype= 2;
-        
-
-
-
+        pr_println!("config_port [{}]", (*port).port_id);
+        RPort::config_port(port);
     }
 }
 pub(crate) static UART_OPS: UartOps = unsafe {
@@ -92,4 +91,3 @@ pub(crate) static UART_OPS: UartOps = unsafe {
         ioctl: None,
     })
 };
-
