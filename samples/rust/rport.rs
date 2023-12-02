@@ -3,6 +3,7 @@ use core::cell::UnsafeCell;
 use crate::linux::port::*;
 use crate::linux::*;
 use crate::pr_println;
+use crate::PORTS;
 use crate::UART_DRIVER;
 use kernel::bindings::*;
 use kernel::c_str;
@@ -25,16 +26,21 @@ pub struct RPort {
     /// Index of the port
     pub index: usize,
     lock: spinlock_t,
-    inner: Inner,
+    inner: UnsafeCell<Inner>,
 }
+
+unsafe impl Sync for RPort {}
+unsafe impl Send for RPort {}
 
 #[derive(Default)]
 struct Inner {
     fcr: u32,
+    lcr: u8,
+    ier: u8,
     tx_loadsz: u32,
     flags: u32,
     rxtrig_bytes: [u32; 4],
-    lsr_saved_flags: UnsafeCell<u16>,
+    lsr_saved_flags: u16,
     lsr_save_mask: u16,
 }
 
@@ -92,15 +98,18 @@ impl RPort {
         let s = Self {
             index,
             lock,
-            inner: Inner {
-                lsr_saved_flags: UnsafeCell::new(0),
+            inner: UnsafeCell::new(Inner {
                 lsr_save_mask: LSR_SAVE_FLAGS as _,
                 ..Default::default()
-            },
+            }),
         };
 
         Box::try_init(s)
     }
+    fn port(&self) -> &UartPort {
+        unsafe { &PORTS[self.index] }
+    }
+
     fn __lock(&self, irq: bool) -> SpinGuard {
         unsafe {
             let lock = &self.lock as *const _ as *mut _;
@@ -108,7 +117,7 @@ impl RPort {
             SpinGuard {
                 c: SpinCommon {
                     lock,
-                    inner: &self.inner as *const _ as *mut _,
+                    inner: self.inner.get(),
                 },
                 irq,
             }
@@ -218,17 +227,90 @@ impl RPort {
         pr_println!("config_port ok");
     }
 
-    pub(crate) fn set_termios(port: *mut uart_port, k1: *mut ktermios, k2: *const ktermios) {}
+    pub(crate) fn set_termios(port: *mut uart_port, k1: *mut ktermios, old: *const ktermios) {
+        unsafe {
+            let port = &mut *port;
+            let s = Self::ref_from_port(port);
+            let termios = &mut *k1;
+            let cval = compute_lcr(termios.c_cflag);
+            let baud = s.uart_get_baud_rate(termios, old);
+            let quot = uart_get_divisor(port, baud);
+            let mut flags = 0;
+            spin_lock_irqsave(&mut port.lock, &mut flags);
+            let inner = &mut *s.inner.get();
+            inner.lcr = cval;
+            uart_update_timeout(port, termios.c_cflag, baud);
+
+            port.read_status_mask = UART_LSR_OE | UART_LSR_THRE | UART_LSR_DR;
+            if (termios.c_iflag & INPCK > 0) {
+                port.read_status_mask |= UART_LSR_FE | UART_LSR_PE;
+            }
+            if (termios.c_iflag & (IGNBRK | BRKINT | PARMRK) > 0) {
+                port.read_status_mask |= UART_LSR_BI;
+            }
+
+            /*
+             * Characters to ignore
+             */
+            port.ignore_status_mask = 0;
+            if (termios.c_iflag & IGNPAR > 0) {
+                port.ignore_status_mask |= UART_LSR_PE | UART_LSR_FE;
+            }
+            if (termios.c_iflag & IGNBRK > 0) {
+                port.ignore_status_mask |= UART_LSR_BI;
+                /*
+                 * If we're ignoring parity and break indicators,
+                 * ignore overruns too (for real raw support).
+                 */
+                if (termios.c_iflag & IGNPAR > 0) {
+                    port.ignore_status_mask |= UART_LSR_OE;
+                }
+            }
+
+            /*
+             * ignore all characters if CREAD is not set
+             */
+            if ((termios.c_cflag & CREAD) == 0) {
+                port.ignore_status_mask |= UART_LSR_DR;
+            }
+
+            /*
+             * CTS flow control flag and modem status interrupts
+             */
+            inner.ier &= (!UART_IER_MSI) as u8;
+            serial_out(port, UART_IER as _, inner.ier as u32 as _);
+
+            serial_out(port, UART_LCR as _, (inner.lcr as u32 | UART_LCR_DLAB ) as _);
+
+            s.dl_write(quot);
+
+            spin_unlock_irqrestore(&mut port.lock, flags);
+            pr_println!("set_termios ok");
+        }
+    }
     pub(crate) fn startup(port: *mut uart_port) -> Result {
         Ok(())
     }
 
+    pub(crate) fn dl_write(&self, value: u32) {
+        unsafe {
+            let port = self.port().as_ptr();
+
+            serial_out(port, UART_DLL as _, (value & 0xff) as _);
+            serial_out(port, UART_DLM as _, (value >> 8 & 0xff) as _);
+        }
+    }
+
+    fn capabilities(&self) -> u32 {
+        Serial8250Config::ns16550a().flags
+    }
+
     fn serial_lsr_in(&self, port: *mut uart_port) -> u16 {
         unsafe {
-            let mut lsr = *self.inner.lsr_saved_flags.get();
+            let inner = &mut *self.inner.get();
+            let mut lsr = inner.lsr_saved_flags;
             lsr |= uart_serial_in(port, UART_LSR as _) as u16;
-            let self_lsr = self.inner.lsr_saved_flags.get(); 
-            *self_lsr = lsr & self.inner.lsr_save_mask;
+            inner.lsr_saved_flags = lsr & inner.lsr_save_mask;
             lsr
         }
     }
@@ -250,6 +332,17 @@ impl RPort {
                 udelay(1);
                 touch_nmi_watchdog(0);
             }
+        }
+    }
+
+    fn uart_get_baud_rate(&self, termios: *mut ktermios, old: *const ktermios) -> u32 {
+        unsafe {
+            let port = &mut *self.port().as_ptr();
+            let tolerance = port.uartclk / 100;
+
+            let min = port.uartclk / 16 / UART_DIV_MAX;
+            let max = (port.uartclk + tolerance) / 16;
+            uart_get_baud_rate(port, termios, old, min, max)
         }
     }
 }
@@ -290,4 +383,22 @@ extern "C" fn serial_out(port: *mut uart_port, offset: i32, value: i32) {
 
         writeb(value, addr);
     }
+}
+fn compute_lcr(c_cflag: tcflag_t) -> core::ffi::c_uchar {
+    let mut cval = unsafe { tty_get_char_size(c_cflag) } - 5;
+
+    if c_cflag & CSTOPB > 0 {
+        cval |= UART_LCR_STOP as u8;
+    }
+    if c_cflag & PARENB > 0 {
+        cval |= UART_LCR_PARITY as u8;
+    }
+    if c_cflag & PARODD == 0 {
+        cval |= UART_LCR_EPAR as u8;
+    }
+    if c_cflag & CMSPAR > 0 {
+        cval |= UART_LCR_SPAR as u8;
+    }
+
+    cval
 }
