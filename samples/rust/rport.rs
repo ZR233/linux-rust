@@ -89,6 +89,9 @@ impl Drop for SpinIrqSaveGuard {
     }
 }
 impl RPort {
+
+
+
     /// new a RPort
     pub fn new(index: usize) -> Result<Box<Self>> {
         let mut lock = spinlock_t::default();
@@ -169,11 +172,6 @@ impl RPort {
             port.flags = UPF_SHARE_IRQ | UPF_BOOT_AUTOCONF | UPF_FIXED_PORT | UPF_FIXED_TYPE;
 
             spin_lock_init!(&mut port.lock);
-
-            let p = RPort::new(index)?;
-            let ptr = Box::into_raw(p);
-
-            (&mut *port.dev).driver_data = ptr as _;
 
             port.flags |= UPF_IOREMAP;
             pr_println!("add_one_port begin");
@@ -280,7 +278,7 @@ impl RPort {
             inner.ier &= (!UART_IER_MSI) as u8;
             serial_out(port, UART_IER as _, inner.ier as u32 as _);
 
-            serial_out(port, UART_LCR as _, (inner.lcr as u32 | UART_LCR_DLAB ) as _);
+            serial_out(port, UART_LCR as _, (inner.lcr as u32 | UART_LCR_DLAB) as _);
 
             s.dl_write(quot);
 

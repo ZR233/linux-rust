@@ -45,6 +45,9 @@ module! {
 }
 static CONSOLE: Console = unsafe { Console::new(UART_DRIVER.as_ptr()) };
 pub(crate) static mut PORTS: [UartPort; NR as usize] = unsafe { [UartPort::zero(); NR as usize] };
+// pub(crate) static mut RPORTS: [RPort; NR as usize] = unsafe { [RPort::zero(); NR as usize] };
+
+
 pub(crate) static UART_DRIVER: UartDriver = unsafe {
     UartDriver::from_struct(uart_driver {
         nr: NR,
