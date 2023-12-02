@@ -1,3 +1,5 @@
+use core::cell::UnsafeCell;
+
 use crate::linux::port::*;
 use crate::linux::*;
 use crate::pr_println;
@@ -7,6 +9,7 @@ use kernel::c_str;
 use kernel::error::*;
 use kernel::learn::platform_driver::PlatformDriver;
 use kernel::learn::uart_opt::*;
+use kernel::learn::uart_port::uart_serial_in;
 use kernel::learn::uart_port::UartPort;
 use kernel::macros::pin_data;
 use kernel::prelude::*;
@@ -16,8 +19,10 @@ use kernel::{
     init::InPlaceInit, init::PinInit, new_spinlock, pin_init, spin_lock_init, sync::SpinLock,
 };
 
+/// Rust Port
 #[derive(Default)]
 pub struct RPort {
+    /// Index of the port
     pub index: usize,
     lock: spinlock_t,
     inner: Inner,
@@ -29,6 +34,8 @@ struct Inner {
     tx_loadsz: u32,
     flags: u32,
     rxtrig_bytes: [u32; 4],
+    lsr_saved_flags: UnsafeCell<u16>,
+    lsr_save_mask: u16,
 }
 
 struct SpinGuard {
@@ -76,6 +83,7 @@ impl Drop for SpinIrqSaveGuard {
     }
 }
 impl RPort {
+    /// new a RPort
     pub fn new(index: usize) -> Result<Box<Self>> {
         let mut lock = spinlock_t::default();
         unsafe {
@@ -84,7 +92,11 @@ impl RPort {
         let s = Self {
             index,
             lock,
-            ..Default::default()
+            inner: Inner {
+                lsr_saved_flags: UnsafeCell::new(0),
+                lsr_save_mask: LSR_SAVE_FLAGS as _,
+                ..Default::default()
+            },
         };
 
         Box::try_init(s)
@@ -175,12 +187,22 @@ impl RPort {
     }
 
     pub(crate) fn config_port(p: *mut uart_port) {
+        pr_println!("config_port begin");
         unsafe {
             let port = &mut *p;
             port.iotype = 2;
             let port_config = Serial8250Config::ns16550a();
             port.fifosize = port_config.fifo_size;
             port.name = port_config.name.as_char_ptr();
+
+            let size = port.mapsize;
+            request_mem_region(port.mapbase, size, c_str!("serial").as_char_ptr());
+
+            if port.flags & UPF_IOREMAP != 0 {
+                port.membase = port.mapbase as *mut _;
+            } else {
+                port.membase = ioremap(port.mapbase, port.mapsize as _) as _;
+            }
 
             let port = RPort::ref_from_port(port);
 
@@ -200,6 +222,36 @@ impl RPort {
     pub(crate) fn startup(port: *mut uart_port) -> Result {
         Ok(())
     }
+
+    fn serial_lsr_in(&self, port: *mut uart_port) -> u16 {
+        unsafe {
+            let mut lsr = *self.inner.lsr_saved_flags.get();
+            lsr |= uart_serial_in(port, UART_LSR as _) as u16;
+            let self_lsr = self.inner.lsr_saved_flags.get(); 
+            *self_lsr = lsr & self.inner.lsr_save_mask;
+            lsr
+        }
+    }
+
+    pub(crate) fn wait_for_xmitr(&self, port: *mut uart_port, bits: i32) {
+        let mut tmout = 10000;
+        unsafe {
+            /* Wait up to 10ms for the character(s) to be sent. */
+            loop {
+                let status = self.serial_lsr_in(port);
+
+                if (status as i32 & bits) == bits {
+                    break;
+                }
+                tmout -= 1;
+                if tmout == 0 {
+                    break;
+                }
+                udelay(1);
+                touch_nmi_watchdog(0);
+            }
+        }
+    }
 }
 
 pub(crate) fn uart_port_init(index: u32, port: &UartPort) {
@@ -212,7 +264,30 @@ pub(crate) fn uart_port_init(index: u32, port: &UartPort) {
         port.pm = None;
         port.ops = UART_OPS.as_ptr();
         port.has_sysrq = b'1';
+        port.serial_in = Some(serial_in);
+        port.serial_out = Some(serial_out);
 
-        pr_println!("{index}");
+        pr_println!("port {index} init");
+    }
+}
+
+extern "C" fn serial_in(port: *mut uart_port, offset: i32) -> u32 {
+    unsafe {
+        let port = (&*port);
+        let regshift = port.regshift as i32;
+        let offset = offset << regshift;
+        let addr = port.membase.offset(offset as _);
+
+        readb(addr)
+    }
+}
+extern "C" fn serial_out(port: *mut uart_port, offset: i32, value: i32) {
+    unsafe {
+        let port = (&*port);
+        let regshift = port.regshift as i32;
+        let offset = offset << regshift;
+        let addr = port.membase.offset(offset as _);
+
+        writeb(value, addr);
     }
 }

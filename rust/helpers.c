@@ -20,7 +20,11 @@
  * Sorted alphabetically.
  */
 
+// #include "asm-generic/io.h"
 #include "asm/sbi.h"
+#include "linux/ioport.h"
+#include "linux/nmi.h"
+#include <asm/io.h>
 #include "linux/serial_core.h"
 #include "linux/spinlock_types.h"
 #include <kunit/test-bug.h>
@@ -168,28 +172,27 @@ EXPORT_SYMBOL_GPL(rust_helper_sbi_console_put);
 
 void rust_helper_spin_lock_irq(spinlock_t *lock)
 {
-	spin_lock_irq(lock);	
+	spin_lock_irq(lock);
 }
 EXPORT_SYMBOL_GPL(rust_helper_spin_lock_irq);
 
 void rust_helper_spin_unlock_irq(spinlock_t *lock)
 {
-	spin_unlock_irq(lock);	
+	spin_unlock_irq(lock);
 }
 EXPORT_SYMBOL_GPL(rust_helper_spin_unlock_irq);
 
 void rust_helper_spin_unlock_irqrestore(spinlock_t *lock, unsigned long flags)
 {
-	spin_unlock_irqrestore(lock, flags);	
+	spin_unlock_irqrestore(lock, flags);
 }
 EXPORT_SYMBOL_GPL(rust_helper_spin_unlock_irqrestore);
 
 void rust_helper_spin_lock_irqsave(spinlock_t *lock, unsigned long *flags)
 {
-	spin_lock_irqsave(lock, *flags);	
+	spin_lock_irqsave(lock, *flags);
 }
 EXPORT_SYMBOL_GPL(rust_helper_spin_lock_irqsave);
-
 
 struct uart_port rust_helper_uart_port_zero(int v)
 {
@@ -197,6 +200,37 @@ struct uart_port rust_helper_uart_port_zero(int v)
 	return a;
 }
 EXPORT_SYMBOL_GPL(rust_helper_uart_port_zero);
+
+struct resource *rust_helper_request_mem_region(resource_size_t start,
+						resource_size_t n,
+						const char *name)
+{
+	return request_mem_region(start, n, name);
+}
+EXPORT_SYMBOL_GPL(rust_helper_request_mem_region);
+
+void *rust_helper_ioremap(resource_size_t addr, unsigned int size)
+{
+	return ioremap(addr, size);
+}
+EXPORT_SYMBOL_GPL(rust_helper_ioremap);
+void rust_helper_touch_nmi_watchdog(int a)
+{
+	touch_nmi_watchdog();
+}
+EXPORT_SYMBOL_GPL(rust_helper_touch_nmi_watchdog);
+
+unsigned int rust_helper_readb(unsigned char *addr)
+{
+	return readb(addr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_readb);
+
+void rust_helper_writeb(int value, unsigned char *addr)
+{
+	writeb(value, addr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_writeb);
 
 /*
  * `bindgen` binds the C `size_t` type as the Rust `usize` type, so we can

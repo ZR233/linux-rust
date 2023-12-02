@@ -115,10 +115,38 @@ unsafe impl Sync for Console {}
 extern "C" fn console_write(co: *mut console, char: *const i8, count: u32) {
     // pr_println!("console write");
     unsafe {
+        let uport = &PORTS[(&*co).index as usize];
+        let port = &mut *uport.as_ptr();
+        let mut flags = 0;
+        spin_lock_irqsave(&mut port.lock, &mut flags);
+
+        let ier = uport.serial_in(1);
+        uport.serial_out(UART_IER as _, 0);
+        uart_console_write(port, char, count, Some(u8250_console_putchar));
+
+        uport.serial_out(UART_IER as _, ier as _);
+
+        let rport = RPort::ref_from_kport(uport);
+        rport.wait_for_xmitr(port, UART_LSR_BOTH_EMPTY as _);
+
+        spin_unlock_irqrestore(&mut port.lock, flags);
+
         // let bytes = &*slice_from_raw_parts(char, count as _);
         // print_bytes(bytes);
     }
 }
+
+extern "C" fn u8250_console_putchar(port: *mut uart_port, ch: core::ffi::c_uchar) {
+    //TODO wait_for_xmitr(up, UART_LSR_THRE);
+
+    let rport = RPort::ref_from_port(port);
+
+    unsafe {
+        rport.wait_for_xmitr(port, UART_LSR_THRE as _);
+        uart_serial_out(port, UART_TX as _, ch as _);
+    }
+}
+
 extern "C" fn console_read(co: *mut console, char: *mut i8, count: u32) -> i32 {
     pr_println!("console read");
     unsafe {
@@ -129,32 +157,39 @@ extern "C" fn console_read(co: *mut console, char: *mut i8, count: u32) -> i32 {
 }
 
 extern "C" fn console_setup(co: *mut console, options: *mut i8) -> i32 {
-    unsafe {
+    from_result(|| unsafe {
         let co = &mut *co;
         let index = co.index as usize;
         let op = CStr::from_char_ptr(options);
         pr_println!("console {index} setup: {}", op.to_str().unwrap());
-        let port = RPort::ref_from_kport(&PORTS[index]);
-    }
-    0
+
+        let uport = &PORTS[index];
+
+        let rport = RPort::ref_from_kport(uport);
+
+        Ok(0)
+    })
 }
 
-fn u8250_console_setup(port: &mut uart_port, options: *mut i8, early: bool) -> Result {
-    let mut baud = 9600;
-    let mut bits = 8;
-    let mut parity = 'n' as i32;
-    let mut flow = 'n' as i32;
-    // let mut resource = resource::default();
+fn u8250_console_setup(
+    co: *mut console,
+    uport: &UartPort,
+    options: *mut i8,
+    early: bool,
+) -> Result {
+    let mut uopt = uport
+        .uart_parse_options(options)
+        .unwrap_or_else(|| UartOptions {
+            baud: 9600,
+            parity: 'n' as _,
+            bits: 8,
+            flow: 'n' as _,
+        });
 
-    if (port.iobase == 0 && port.membase.is_null()) {
-        return Err(code::ENODEV);
-    }
-    unsafe {
-        if !port.dev.is_null() {
-            to_result(__pm_runtime_resume(port.dev, RPM_GET_PUT as _))?;
-        }
-    }
+    uport.uart_set_options(co, uopt)?;
+    uport.pm_runtime_get_sync()?;
 
+    pr_println!("u8250_console_setup ok");
     Ok(())
 }
 
@@ -162,25 +197,20 @@ extern "C" fn console_match(co: *mut console, name: *mut i8, index: i32, options
     from_result(|| unsafe {
         let name = CStr::from_char_ptr(name).to_str().unwrap();
         pr_println!("console match name:{}", name);
-        if !options.is_null() {
-            let options_str = CStr::from_char_ptr(options).to_str().unwrap();
-
-            pr_println!("options:{}", options_str);
-        }
 
         let mut iotype = 0;
         let mut addr = 0;
 
         /* try to match the port specified on the command line */
         for i in 0..NR as usize {
-            let port_w = &PORTS[i];
-            let port = &mut *port_w.as_ptr();
+            let uport = &PORTS[i];
+            let port = &mut *uport.as_ptr();
 
             let index = i as i16;
             (&mut *co).index = index;
             port.cons = co;
             pr_println!("use port {index} as console");
-
+            u8250_console_setup(co, uport, options, true)?;
             return Ok(0);
         }
         Ok(0)

@@ -1,6 +1,6 @@
 use kernel::bindings::sbi_console_put;
 
-
+/// sbi print
 pub fn _print(s: &str) {
     unsafe {
         for c in s.as_bytes() {

@@ -58,6 +58,7 @@
 #include <asm/irq.h>
 #include <asm/sbi.h>
 #include <linux/dma/imx-dma.h>
+#include <linux/nmi.h>
 
 /* `bindgen` gets confused at certain things. */
 const size_t RUST_CONST_HELPER_ARCH_SLAB_MINALIGN = ARCH_SLAB_MINALIGN;

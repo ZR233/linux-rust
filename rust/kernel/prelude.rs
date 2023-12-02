@@ -38,3 +38,8 @@ pub use super::{str::CStr, ThisModule};
 pub use super::init::{InPlaceInit, Init, PinInit};
 
 pub use super::current;
+
+/// pm_runtime_get_sync
+pub unsafe fn pm_runtime_get_sync(dev: *mut kernel::bindings::device) -> core::ffi::c_int {
+    unsafe { kernel::bindings::__pm_runtime_resume(dev, kernel::bindings::RPM_GET_PUT as _) }
+}

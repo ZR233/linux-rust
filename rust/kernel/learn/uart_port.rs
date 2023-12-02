@@ -1,6 +1,6 @@
-
 use super::uart_opt::UartOps;
 use crate::bindings::*;
+use crate::error::to_result;
 use crate::prelude::*;
 use core::mem::size_of;
 use core::ptr::null_mut;
@@ -25,97 +25,16 @@ impl UartPort {
         }
     }
 
-
-    // pub const fn zero() -> Self {
-    //     Self(uart_port {
-    //         lock: spinlock {
-    //             _bindgen_opaque_blob: [0; 3],
-    //         },
-    //         iobase: 0,
-    //         membase: null_mut(),
-    //         serial_in: None,
-    //         serial_out: None,
-    //         set_termios: None,
-    //         set_ldisc: None,
-    //         get_mctrl: None,
-    //         set_mctrl: None,
-    //         get_divisor: None,
-    //         set_divisor: None,
-    //         startup: None,
-    //         shutdown: None,
-    //         throttle: None,
-    //         unthrottle: None,
-    //         handle_irq: None,
-    //         pm: None,
-    //         handle_break: None,
-    //         rs485_config: None,
-    //         iso7816_config: None,
-    //         ctrl_id: 0,
-    //         port_id: 0,
-    //         irq: 0,
-    //         irqflags: 0,
-    //         uartclk: 0,
-    //         fifosize: 0,
-    //         x_char: 0,
-    //         regshift: 0,
-    //         iotype: 0,
-    //         quirks: 0,
-    //         read_status_mask: 0,
-    //         ignore_status_mask: 0,
-    //         state: null_mut(),
-    //         icount: uart_icount {
-    //             cts: 0,
-    //             dsr: 0,
-    //             rng: 0,
-    //             dcd: 0,
-    //             rx: 0,
-    //             tx: 0,
-    //             frame: 0,
-    //             overrun: 0,
-    //             parity: 0,
-    //             brk: 0,
-    //             buf_overrun: 0,
-    //         },
-    //         cons: null_mut(),
-    //         flags: 0,
-    //         status: 0,
-    //         hw_stopped: false,
-    //         mctrl: 0,
-    //         frame_time: 0,
-    //         type_: 0,
-    //         ops: null_mut(),
-    //         custom_divisor: 0,
-    //         line: 0,
-    //         minor: 0,
-    //         mapbase: 0,
-    //         mapsize: 0,
-    //         dev: null_mut(),
-    //         port_dev: null_mut(),
-    //         sysrq: 0,
-    //         sysrq_ch: 0,
-    //         has_sysrq: 0,
-    //         sysrq_seq: 0,
-    //         hub6: 0,
-    //         suspended: 0,
-    //         console_reinit: 0,
-    //         name: null_mut(),
-    //         attr_group: null_mut(),
-    //         tty_groups: null_mut(),
-    //         rs485: serial_rs485_zero(),
-    //         rs485_supported: serial_rs485_zero(),
-    //         rs485_term_gpio: null_mut(),
-    //         rs485_rx_during_tx_gpio: null_mut(),
-    //         iso7816: serial_iso7816 {
-    //             tg: 0,
-    //             sc_fi: 0,
-    //             sc_di: 0,
-    //             clk: 0,
-    //             reserved: [0; 5],
-    //             flags: 0,
-    //         },
-    //         private_data: null_mut(),
-    //     })
-    // }
+    pub fn pm_runtime_get_sync(&self) -> Result {
+        unsafe {
+            let dev = (&*self.as_ptr()).dev;
+            if dev.is_null() {
+                return Ok(());
+            }
+            to_result(pm_runtime_get_sync(dev))?;
+        }
+        Ok(())
+    }
 
     pub unsafe fn as_ptr(&self) -> *mut uart_port {
         &self.0 as *const _ as _
@@ -126,8 +45,83 @@ impl UartPort {
             self.0.ops = ops.as_ptr();
         }
     }
+    /// uart_set_options
+    pub fn uart_set_options(&self, co: *mut console, options: UartOptions) -> Result {
+        unsafe {
+            to_result(uart_set_options(
+                self.as_ptr(),
+                co,
+                options.baud,
+                options.parity,
+                options.bits,
+                options.flow,
+            ))
+        }
+    }
+    /// uart_parse_options
+    pub fn uart_parse_options(&self, options: *const core::ffi::c_char) -> Option<UartOptions> {
+        let mut out = UartOptions::default();
+
+        unsafe {
+            if options.is_null() {
+                return None;
+            }
+
+            uart_parse_options(
+                options,
+                &mut out.baud,
+                &mut out.parity,
+                &mut out.bits,
+                &mut out.flow,
+            )
+        }
+        Some(out)
+    }
+    /// serial_in
+    pub fn serial_in(&self, offset: i32) -> u32 {
+        unsafe {
+            let port = &mut *self.as_ptr();
+            let f = (&*port).serial_in.unwrap();
+            f(port, offset)
+        }
+    }
+
+    /// serial_out
+    pub fn serial_out(&self, offset: i32, value: i32) {
+        unsafe {
+            let port = &mut *self.as_ptr();
+            let f = (&*port).serial_out.unwrap();
+            f(port, offset, value)
+        }
+    }
+
 }
 
+/// uart_serial_in
+pub unsafe fn uart_serial_in(port: *mut uart_port, offset: i32) -> u32 {
+    unsafe {
+        let port = &mut *port;
+        let f = (&*port).serial_in.unwrap();
+        f(port, offset)
+    }
+}
+
+/// uart_serial_out
+pub unsafe fn uart_serial_out(port: *mut uart_port,  offset: i32, value: i32) {
+    unsafe {
+        let port = &mut *port;
+        let f = (&*port).serial_out.unwrap();
+        f(port, offset, value)
+    }
+}
+
+#[derive(Default)]
+pub struct UartOptions {
+    pub baud: core::ffi::c_int,
+    pub parity: core::ffi::c_int,
+    pub bits: core::ffi::c_int,
+    pub flow: core::ffi::c_int,
+}
 // const fn serial_rs485_zero() -> serial_rs485 {
 //     serial_rs485 {
 //         flags: 0,

@@ -705,7 +705,7 @@ static void serial8250_set_sleep(struct uart_8250_port *p, int sleep)
 
 static void serial8250_clear_IER(struct uart_8250_port *up)
 {
-	if (up->capabilities & UART_CAP_UUE)
+	if (up->capabilities & UART_CAP_UUE)	
 		serial_out(up, UART_IER, UART_IER_UUE);
 	else
 		serial_out(up, UART_IER, 0);
@@ -2186,6 +2186,7 @@ int serial8250_do_startup(struct uart_port *port)
 	int retval;
 	u16 lsr;
 
+	pr_info("startup: clk %d", port->uartclk);
 	if (!port->fifosize)
 		port->fifosize = uart_config[port->type].fifo_size;
 	if (!up->tx_loadsz)
@@ -2323,6 +2324,9 @@ int serial8250_do_startup(struct uart_port *port)
 	retval = up->ops->setup_irq(up);
 	if (retval)
 		goto out;
+
+
+
 
 	if (port->irq && !(up->port.flags & UPF_NO_THRE_TEST)) {
 		unsigned char iir1;
@@ -3506,6 +3510,8 @@ int serial8250_console_setup(struct uart_port *port, char *options, bool probe)
 		uart_parse_options(options, &baud, &parity, &bits, &flow);
 	else if (probe)
 		baud = probe_baud(port);
+
+	pr_info("console_setup baud: %d", baud);
 
 	ret = uart_set_options(port, port->cons, baud, parity, bits, flow);
 	if (ret)
