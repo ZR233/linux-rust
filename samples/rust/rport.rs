@@ -218,7 +218,7 @@ impl RPort {
 
             to_result(uart_get_rs485_mode(port))?;
 
-            port.attr_group = &mut (&mut *DEV_ATTR_GROUP).0;
+            // port.attr_group = &mut (&mut *DEV_ATTR_GROUP).0;
             // has_acpi_companion
             if !is_acpi_device_node((&*port.dev).fwnode) {}
 
@@ -325,7 +325,6 @@ impl RPort {
              */
             inner.ier &= (!UART_IER_MSI) as u8;
             s.serial_out(UART_IER as _, inner.ier as u32 as _);
-
             s.serial_out(UART_LCR as _, (inner.lcr as u32 | UART_LCR_DLAB) as _);
 
             s.dl_write(quot);
@@ -379,8 +378,8 @@ impl RPort {
         unsafe {
             let port = self.port().as_ptr();
 
-            serial_out(port, UART_DLL as _, (value & 0xff) as _);
-            serial_out(port, UART_DLM as _, (value >> 8 & 0xff) as _);
+            self.serial_out( UART_DLL as _, (value & 0xff) as _);
+            self.serial_out( UART_DLM as _, (value >> 8 & 0xff) as _);
         }
     }
 
@@ -554,8 +553,8 @@ extern "C" fn serial_out(port: *mut uart_port, offset: i32, value: i32) {
         let regshift = port.regshift as i32;
         let offset = offset << regshift;
         let addr = port.membase.offset(offset as _);
-        pr_println!("w addr:{:p}", addr);
-        writeb(value, addr);
+        // pr_println!("w addr:{:p}", addr);
+        // writeb(value, addr);
     }
 }
 fn compute_lcr(c_cflag: tcflag_t) -> core::ffi::c_uchar {

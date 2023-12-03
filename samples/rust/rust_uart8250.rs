@@ -29,7 +29,7 @@ use kernel::prelude::*;
 use kernel::str::CString;
 use kernel::sync::*;
 
-pub(crate) const NR: i32 = 4;
+pub(crate) const NR: i32 = 1;
 const TTY_MAJOR: i32 = 4;
 const TTY_MINOR: i32 = 64;
 const DEV_NAME: &CStr = c_str!("ttySZ");
@@ -123,8 +123,7 @@ unsafe impl Send for Console {}
 unsafe impl Sync for Console {}
 
 extern "C" fn console_write(co: *mut console, char: *const i8, count: u32) {
-    // pr_println!("console write")
-
+    pr_println!("console write");
     unsafe {
         let bytes = &*slice_from_raw_parts(char, count as _);
         print_bytes(bytes);
@@ -368,7 +367,7 @@ pub extern "C" fn __Rust_UART_console_init() -> core::ffi::c_int {
 }
 
 fn console_init() {
-    pr_println!("console init");
+    pr_println!("[ZR233] console init");
 
     unsafe {
         for i in 0..NR as usize {
