@@ -252,10 +252,11 @@ impl RPort {
             let size = port.mapsize;
             request_mem_region(port.mapbase, size, c_str!("serial").as_char_ptr());
 
-            if port.flags & UPF_IOREMAP != 0 {
+            if port.flags & UPF_IOREMAP == 0 {
                 port.membase = port.mapbase as *mut _;
             } else {
                 port.membase = ioremap(port.mapbase, port.mapsize as _) as _;
+                pr_println!("ioremap ok: {:p}", port.membase);
             }
 
             let port = RPort::ref_from_port(port);
