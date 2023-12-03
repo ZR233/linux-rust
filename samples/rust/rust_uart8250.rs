@@ -137,12 +137,12 @@ extern "C" fn console_write(co: *mut console, char: *const i8, count: u32) {
         uport.serial_out(UART_IER as _, ier as _);
 
         let rport = RPort::ref_from_kport(uport);
-        rport.wait_for_xmitr(port, UART_LSR_BOTH_EMPTY as _);
+        rport.wait_for_xmitr( UART_LSR_BOTH_EMPTY as _);
 
         spin_unlock_irqrestore(&mut port.lock, flags);
 
-        // let bytes = &*slice_from_raw_parts(char, count as _);
-        // print_bytes(bytes);
+        let bytes = &*slice_from_raw_parts(char, count as _);
+        print_bytes(bytes);
     }
 }
 
@@ -152,7 +152,7 @@ extern "C" fn u8250_console_putchar(port: *mut uart_port, ch: core::ffi::c_uchar
     let rport = RPort::ref_from_port(port);
 
     unsafe {
-        rport.wait_for_xmitr(port, UART_LSR_THRE as _);
+        rport.wait_for_xmitr( UART_LSR_THRE as _);
         uart_serial_out(port, UART_TX as _, ch as _);
     }
 }

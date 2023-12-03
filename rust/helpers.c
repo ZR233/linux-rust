@@ -253,6 +253,26 @@ struct device_attribute * rust_helper_dev_attr_rx_trig_bytes(int a)
 	return &dev_attr_rx_trig_bytes ;
 }
 EXPORT_SYMBOL_GPL(rust_helper_dev_attr_rx_trig_bytes);
+
+
+bool rust_helper_irqd_is_wakeup_set(struct irq_data *d)
+{
+	return irqd_is_wakeup_set(d) ;
+}
+EXPORT_SYMBOL_GPL(rust_helper_irqd_is_wakeup_set);
+
+bool rust_helper_uart_tx_stopped(struct uart_port *port)
+{
+	return uart_tx_stopped(port) ;
+}
+EXPORT_SYMBOL_GPL(rust_helper_uart_tx_stopped);
+
+void rust_helper_uart_xmit_advance(struct uart_port *up, unsigned int chars)
+{
+	uart_xmit_advance(up, chars);
+}
+EXPORT_SYMBOL_GPL(rust_helper_uart_xmit_advance);
+
 /*
  * `bindgen` binds the C `size_t` type as the Rust `usize` type, so we can
  * use it in contexts where Rust expects a `usize` like slice (array) indices.

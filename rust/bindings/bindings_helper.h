@@ -59,7 +59,7 @@
 #include <linux/dma/imx-dma.h>
 #include <linux/nmi.h>
 #include <linux/serial.h>
-
+#include <linux/irqreturn.h>
 
 /* `bindgen` gets confused at certain things. */
 const size_t RUST_CONST_HELPER_ARCH_SLAB_MINALIGN = ARCH_SLAB_MINALIGN;
@@ -73,4 +73,8 @@ const upf_t RUST_CONST_HELPER_UPF_BOOT_AUTOCONF = UPF_BOOT_AUTOCONF;
 const upf_t RUST_CONST_HELPER_UPF_FIXED_PORT = UPF_FIXED_PORT;
 const upf_t RUST_CONST_HELPER_UPF_FIXED_TYPE = UPF_FIXED_TYPE;
 const unsigned int RUST_CONST_HELPER_UART_CAP_FIFO = BIT(8);
-// const int RUST_CONST_HELPER_SBI_CONSOLE_GET_CHAR = SBI_EXT_0_1_CONSOLE_GETCHAR;
+
+const upstat_t RUST_CONST_HELPER_UPSTAT_AUTOCTS = UPSTAT_AUTOCTS;
+const upstat_t RUST_CONST_HELPER_UPSTAT_AUTORTS = UPSTAT_AUTORTS;
+const irqreturn_t RUST_CONST_HELPER_IRQ_NONE = IRQ_NONE;
+const irqreturn_t RUST_CONST_HELPER_IRQ_HANDLED = IRQ_HANDLED;

@@ -1,6 +1,7 @@
 use core::cell::UnsafeCell;
 use core::mem::size_of;
 use core::ptr::null_mut;
+use core::ptr::slice_from_raw_parts;
 
 use crate::linux::port::*;
 use crate::linux::*;
@@ -38,15 +39,13 @@ impl AG {
 
         Box::try_init(s)
     }
-
-
 }
 
 pub(crate) fn init_dev_attr() {
     unsafe {
         let attr = (&*dev_attr_rx_trig_bytes(0)).attr;
         DEV_ATTRS[0] = &attr as *const _ as *mut attribute;
-        let b:  Box<AG> = AG::new(DEV_ATTRS.as_mut_ptr()).unwrap();
+        let b: Box<AG> = AG::new(DEV_ATTRS.as_mut_ptr()).unwrap();
         let ptr = Box::into_raw(b);
 
         DEV_ATTR_GROUP = ptr;
@@ -213,13 +212,13 @@ impl RPort {
             port.mapbase = resource.start;
             port.mapsize = resource.end - resource.start + 1;
             port.iotype = UPIO_MEM as _;
-            port.flags = UPF_SHARE_IRQ | UPF_BOOT_AUTOCONF | UPF_FIXED_PORT | UPF_FIXED_TYPE;
+            port.flags = UPF_SHARE_IRQ | UPF_BOOT_AUTOCONF | UPF_FIXED_PORT | UPF_FIXED_TYPE | UPF_IOREMAP;
 
             spin_lock_init!(&mut port.lock);
 
             to_result(uart_get_rs485_mode(port))?;
 
-            port.attr_group = &mut (&mut*DEV_ATTR_GROUP).0;
+            port.attr_group = &mut (&mut *DEV_ATTR_GROUP).0;
             // has_acpi_companion
             if !is_acpi_device_node((&*port.dev).fwnode) {}
 
@@ -324,9 +323,9 @@ impl RPort {
              * CTS flow control flag and modem status interrupts
              */
             inner.ier &= (!UART_IER_MSI) as u8;
-            serial_out(port, UART_IER as _, inner.ier as u32 as _);
+            s.serial_out(UART_IER as _, inner.ier as u32 as _);
 
-            serial_out(port, UART_LCR as _, (inner.lcr as u32 | UART_LCR_DLAB) as _);
+            s.serial_out(UART_LCR as _, (inner.lcr as u32 | UART_LCR_DLAB) as _);
 
             s.dl_write(quot);
 
@@ -335,7 +334,44 @@ impl RPort {
         }
     }
     pub(crate) fn startup(port: *mut uart_port) -> Result {
+        let s = RPort::ref_from_port(port);
+        s.clear_fifos();
+
+        /*
+         * Clear the interrupt registers.
+         */
+        s.serial_in(UART_LSR as _);
+
+        s.serial_in(UART_RX as _);
+        s.serial_in(UART_IIR as _);
+        s.serial_in(UART_MSR as _);
+
         Ok(())
+    }
+
+    fn setup_irq(&self) {
+        unsafe {
+            let port = &mut *self.port().as_ptr();
+
+            request_threaded_irq(
+                port.irq,
+                Some(u8250_interrupt),
+                None,
+                port.irqflags,
+                port.name,
+                port as *mut _ as _,
+            );
+        }
+    }
+
+    fn clear_fifos(&self) {
+        self.serial_out(UART_FCR as _, UART_FCR_ENABLE_FIFO as _);
+        self.serial_out(
+            UART_FCR as _,
+            (UART_FCR_ENABLE_FIFO | UART_FCR_CLEAR_RCVR | UART_FCR_CLEAR_XMIT) as _,
+        );
+
+        self.serial_out(UART_FCR as _, 0);
     }
 
     pub(crate) fn dl_write(&self, value: u32) {
@@ -351,8 +387,9 @@ impl RPort {
         Serial8250Config::ns16550a().flags
     }
 
-    fn serial_lsr_in(&self, port: *mut uart_port) -> u16 {
+    fn serial_lsr_in(&self) -> u16 {
         unsafe {
+            let port = self.port().as_ptr();
             let inner = &mut *self.inner.get();
             let mut lsr = inner.lsr_saved_flags;
             lsr |= uart_serial_in(port, UART_LSR as _) as u16;
@@ -361,12 +398,12 @@ impl RPort {
         }
     }
 
-    pub(crate) fn wait_for_xmitr(&self, port: *mut uart_port, bits: i32) {
+    pub(crate) fn wait_for_xmitr(&self, bits: i32) {
         let mut tmout = 10000;
         unsafe {
             /* Wait up to 10ms for the character(s) to be sent. */
             loop {
-                let status = self.serial_lsr_in(port);
+                let status = self.serial_lsr_in();
 
                 if (status as i32 & bits) == bits {
                     break;
@@ -391,6 +428,89 @@ impl RPort {
             uart_get_baud_rate(port, termios, old, min, max)
         }
     }
+
+    fn rx_chars(&self, lsr: u16) -> u16 {
+        let mut lsr = lsr;
+        unsafe {
+            let port = self.port().as_ptr();
+            let max_count = 256;
+            let mut count = max_count;
+            loop {
+                self.read_char(lsr);
+
+                if count == 0 {
+                    break;
+                }
+
+                lsr = self.serial_in(UART_LSR as _) as _;
+
+                if lsr as u32 & (UART_LSR_DR | UART_LSR_BI) == 0 {
+                    break;
+                }
+
+                count -= 1;
+            }
+            let state = &mut *(&mut *port).state;
+
+            tty_flip_buffer_push(&mut state.port);
+
+            lsr
+        }
+    }
+
+    fn read_char(&self, lsr: u16) {
+        unsafe {
+            let port = &mut *self.port().as_ptr();
+            let flag = TTY_NORMAL;
+            let ch = self.serial_in(UART_TX as _);
+            port.icount.rx += 1;
+            let up = &mut *self.inner.get();
+
+            let mut lsr = lsr | up.lsr_saved_flags;
+
+            uart_insert_char(port, lsr as _, UART_LSR_OE as _, ch as _, flag as _);
+        }
+    }
+    fn serial_in(&self, offset: i32) -> u32 {
+        unsafe { serial_in(self.port().as_ptr(), offset) }
+    }
+    fn serial_out(&self, offset: i32, value: i32) {
+        unsafe { serial_out(self.port().as_ptr(), offset, value) }
+    }
+
+    fn tx_chars(&self) {
+        unsafe {
+            let port = &mut *self.port().as_ptr();
+            let xmit = &mut (&mut *port.state).xmit;
+            let up = &mut *self.inner.get();
+            if (port.x_char > 0) {
+                uart_xchar_out(port, UART_TX as _);
+                return;
+            }
+
+            if uart_tx_stopped(port) {
+                // TODO
+            }
+
+            let mut count = up.tx_loadsz;
+            loop {
+                let buf = &*slice_from_raw_parts(xmit.buf, xmit.tail as usize + 1);
+
+                self.serial_out(UART_TX as _, buf[xmit.tail as usize] as _);
+
+                uart_xmit_advance(port, 1);
+
+                if xmit.head == xmit.tail {
+                    break;
+                }
+
+                count -= 1;
+                if count == 0 {
+                    break;
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn uart_port_init(index: u32, port: &UartPort) {
@@ -406,7 +526,7 @@ pub(crate) fn uart_port_init(index: u32, port: &UartPort) {
         port.serial_in = Some(serial_in);
         port.serial_out = Some(serial_out);
         let index = index as usize;
-
+        port.handle_irq = Some(u8250_handle_irq);
         RPORTS[index].init(index);
 
         pr_println!("port {} init", get_port(index).index);
@@ -433,7 +553,7 @@ extern "C" fn serial_out(port: *mut uart_port, offset: i32, value: i32) {
         let regshift = port.regshift as i32;
         let offset = offset << regshift;
         let addr = port.membase.offset(offset as _);
-
+        pr_println!("w addr:{:p}", addr);
         writeb(value, addr);
     }
 }
@@ -454,4 +574,61 @@ fn compute_lcr(c_cflag: tcflag_t) -> core::ffi::c_uchar {
     }
 
     cval
+}
+unsafe extern "C" fn u8250_interrupt(irq: i32, dev_id: *mut core::ffi::c_void) -> irqreturn_t {
+    unsafe {
+        let port = &mut *(dev_id as *mut uart_port);
+        let r = port.handle_irq.unwrap()(port);
+
+        if r > 0 {
+            irqreturn_IRQ_HANDLED
+        } else {
+            irqreturn_IRQ_NONE
+        }
+    }
+}
+extern "C" fn u8250_handle_irq(port: *mut uart_port) -> i32 {
+    let rport = RPort::ref_from_port(port);
+    let uport = rport.port();
+
+    let iir = serial_in(port, UART_IIR as _);
+    if iir & UART_IIR_NO_INT > 0 {
+        return 0;
+    }
+
+    unsafe {
+        let port = &mut *uport.as_ptr();
+        let tport = &mut (&mut *port.state).port;
+        let mut flags = 0;
+        spin_lock_irqsave(&mut port.lock, &mut flags);
+
+        let mut status = rport.serial_lsr_in();
+        /*
+         * If port is stopped and there are no error conditions in the
+         * FIFO, then don't drain the FIFO, as this may lead to TTY buffer
+         * overflow. Not servicing, RX FIFO would trigger auto HW flow
+         * control when FIFO occupancy reaches preset threshold, thus
+         * halting RX. This only works when auto HW flow control is
+         * available.
+         */
+
+        let skip_rx = (status as u32 & (UART_LSR_FIFOE | UART_LSR_BRK_ERROR_BITS)) == 0
+            && (port.status & (UPSTAT_AUTOCTS | UPSTAT_AUTORTS)) > 0
+            && (port.read_status_mask & UART_LSR_DR) == 0;
+
+        if (status as u32 & (UART_LSR_DR | UART_LSR_BI)) > 0 && !skip_rx {
+            let mut d = irq_get_irq_data(port.irq);
+            if !d.is_null() && irqd_is_wakeup_set(d) {
+                let tty = &mut *tport.tty;
+
+                pm_wakeup_dev_event(tty.dev, 0, false);
+            }
+
+            status = rport.rx_chars(status);
+        }
+
+        spin_unlock_irqrestore(&mut port.lock, flags);
+    }
+
+    1
 }
