@@ -33,6 +33,7 @@
 #include <linux/mutex.h>
 #include <linux/netdevice.h>
 #include <linux/of_device.h>
+#include <linux/etherdevice.h>
 #include <linux/pci.h>
 #include <linux/platform_device.h>
 #include <linux/sched/signal.h>
@@ -627,7 +628,8 @@ EXPORT_SYMBOL_GPL(rust_helper_NF_QUEUE_NR);
 void rust_helper___INIT_WORK_WITH_KEY(struct work_struct *work,
 		work_func_t func, bool on_stack, struct lock_class_key *key)
 {
-	__INIT_WORK_WITH_KEY(work, func, on_stack, key);
+	//__INIT_WORK_WITH_KEY(work, func, on_stack, key);
+	__INIT_WORK_KEY(work, func, on_stack, key);
 }
 EXPORT_SYMBOL_GPL(rust_helper___INIT_WORK_WITH_KEY);
 
@@ -712,6 +714,137 @@ void *rust_helper_pci_get_drvdata(struct pci_dev *pdev)
     return pci_get_drvdata(pdev);
 }
 EXPORT_SYMBOL_GPL(rust_helper_pci_get_drvdata);
+
+// helpers.c from fujita/linux-rust-e1000
+void rust_helper_dev_set_drvdata(struct device *dev, void *data)
+{
+	dev_set_drvdata(dev, data);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dev_set_drvdata);
+
+dma_addr_t rust_helper_dma_map_single_attrs(struct device *dev, void *ptr,
+		size_t size, enum dma_data_direction dir,
+		unsigned long attrs)
+{
+	return dma_map_single_attrs(dev, ptr, size, dir, attrs);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dma_map_single_attrs);
+
+void rust_helper_dma_unmap_single_attrs(struct device *dev, dma_addr_t addr,
+		size_t size, enum dma_data_direction dir,
+		unsigned long attrs)
+{
+	dma_unmap_single_attrs(dev, addr, size, dir, attrs);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dma_unmap_single_attrs);
+
+int rust_helper_dma_mapping_error(struct device *dev, dma_addr_t dma_addr)
+{
+	return dma_mapping_error(dev, dma_addr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dma_mapping_error);
+
+void *rust_helper_dma_alloc_coherent(struct device *dev, size_t size,
+		dma_addr_t *dma_handle, gfp_t gfp)
+{
+	return dma_alloc_coherent(dev, size, dma_handle, gfp);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dma_alloc_coherent);
+
+void rust_helper_dma_free_coherent(struct device *dev, size_t size,
+		void *cpu_addr, dma_addr_t dma_handle)
+{
+	return dma_free_coherent(dev, size, cpu_addr, dma_handle);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dma_free_coherent);
+
+#ifdef CONFIG_NET
+void rust_helper_eth_hw_addr_set(struct net_device *dev, const u8 *addr)
+{
+	eth_hw_addr_set(dev, addr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_eth_hw_addr_set);
+
+void rust_helper_netif_start_queue(struct net_device *dev)
+{
+	netif_start_queue(dev);
+}
+EXPORT_SYMBOL_GPL(rust_helper_netif_start_queue);
+
+void rust_helper_netif_stop_queue(struct net_device *dev) {
+	netif_stop_queue(dev);
+}
+EXPORT_SYMBOL_GPL(rust_helper_netif_stop_queue);
+
+void rust_helper_netdev_sent_queue(struct net_device *dev, unsigned int bytes) {
+	return netdev_sent_queue(dev, bytes);
+}
+EXPORT_SYMBOL_GPL(rust_helper_netdev_sent_queue);
+
+struct sk_buff *rust_helper_netdev_alloc_skb_ip_align(struct net_device *dev,
+		unsigned int length) {
+	return netdev_alloc_skb_ip_align(dev, length);
+}
+EXPORT_SYMBOL_GPL(rust_helper_netdev_alloc_skb_ip_align);
+
+int rust_helper_skb_put_padto(struct sk_buff *skb, unsigned int len) {
+	return skb_put_padto(skb, len);
+}
+EXPORT_SYMBOL_GPL(rust_helper_skb_put_padto);
+
+void rust_helper_netdev_completed_queue(struct net_device *dev, unsigned int pkts,
+		unsigned int bytes) {
+	netdev_completed_queue(dev, pkts, bytes);
+}
+EXPORT_SYMBOL_GPL(rust_helper_netdev_completed_queue);
+
+#endif
+
+u8 rust_helper_inb(unsigned long addr)
+{
+	return inb(addr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_inb);
+
+u16 rust_helper_inw(unsigned long addr)
+{
+	return inw(addr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_inw);
+
+u32 rust_helper_inl(unsigned long addr)
+{
+	return inl(addr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_inl);
+
+void rust_helper_outb(u8 value, unsigned long addr)
+{
+	outb(value, addr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_outb);
+
+void rust_helper_outw(u16 value, unsigned long addr)
+{
+	outw(value, addr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_outw);
+
+void rust_helper_outl(u32 value, unsigned long addr)
+{
+	outl(value, addr);
+}
+EXPORT_SYMBOL_GPL(rust_helper_outl);
+
+void rust_helper_udelay(unsigned long usecs) {
+	udelay(usecs);
+}
+EXPORT_SYMBOL_GPL(rust_helper_udelay);
+
+void rust_helper_ndelay(unsigned long nsecs) {
+	ndelay(nsecs);
+}
+EXPORT_SYMBOL_GPL(rust_helper_ndelay);
 
 /*
  * We use `bindgen`'s `--size_t-is-usize` option to bind the C `size_t` type

@@ -13,7 +13,6 @@
 
 #![no_std]
 #![feature(allocator_api)]
-#![feature(core_ffi_c)]
 #![feature(associated_type_defaults)]
 #![feature(coerce_unsized)]
 #![feature(const_mut_refs)]
@@ -53,14 +52,18 @@ pub use macros;
 
 #[cfg(CONFIG_ARM_AMBA)]
 pub mod amba;
+#[doc(hidden)]
 pub mod blk;
 pub mod chrdev;
 #[cfg(CONFIG_COMMON_CLK)]
 pub mod clk;
 pub mod cred;
 pub mod delay;
+#[doc(hidden)]
 pub mod device;
+#[doc(hidden)]
 pub mod dma;
+pub mod endian;
 pub mod driver;
 pub mod file;
 pub mod fs;
@@ -73,6 +76,7 @@ pub mod mm;
 #[cfg(CONFIG_NET)]
 pub mod net;
 pub mod pages;
+#[doc(hidden)]
 #[cfg(CONFIG_PCI)]
 pub mod pci;
 pub mod power;
@@ -102,7 +106,7 @@ pub mod iov_iter;
 pub mod of;
 pub mod platform;
 pub mod user_ptr;
-
+#[doc(hidden)]
 pub mod box_ext;
 
 #[cfg(CONFIG_KUNIT)]

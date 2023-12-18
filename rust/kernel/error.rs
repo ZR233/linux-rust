@@ -279,24 +279,6 @@ impl From<Utf8Error> for Error {
     }
 }
 
-impl From<AllocError> for Error {
-    fn from(_: AllocError) -> Error {
-        code::ENOMEM
-    }
-}
-
-impl From<TryFromIntError> for Error {
-    fn from(_: TryFromIntError) -> Error {
-        code::EINVAL
-    }
-}
-
-impl From<Utf8Error> for Error {
-    fn from(_: Utf8Error) -> Error {
-        code::EINVAL
-    }
-}
-
 impl From<TryReserveError> for Error {
     fn from(_: TryReserveError) -> Error {
         code::ENOMEM

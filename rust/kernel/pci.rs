@@ -29,16 +29,28 @@ impl<T: Driver> driver::DriverOps for Adapter<T> {
         name: &'static CStr,
         module: &'static ThisModule,
     ) -> Result {
+        // SAFETY: By the safety requirements of this function (defined in the trait definition),
+        // `reg` is non-null and valid.
         let pdrv: &mut bindings::pci_driver = unsafe { &mut *reg };
 
         pdrv.name = name.as_char_ptr();
         pdrv.probe = Some(Self::probe_callback);
         pdrv.remove = Some(Self::remove_callback);
         pdrv.id_table = T::ID_TABLE.as_ref();
+
+        // SAFETY:
+        //   - `pdrv` lives at least until the call to `pci_unregister_driver()` returns.
+        //   - `name` pointer has static lifetime.
+        //   - `probe()` and `remove()` are static functions.
+        //   - `of_match_table` is a raw pointer with static lifetime,
+        //      as guaranteed by the [`driver::IdTable`] type.
         to_result(unsafe { bindings::__pci_register_driver(reg, module.0, name.as_char_ptr()) })
     }
 
     unsafe fn unregister(reg: *mut bindings::pci_driver) {
+        // SAFETY: By the safety requirements of this function (defined in the trait definition),
+        // `reg` was passed (and updated) by a previous successful call to
+        // `__pci_register_driver`.
         unsafe { bindings::pci_unregister_driver(reg) }
     }
 }
@@ -49,6 +61,9 @@ impl<T: Driver> Adapter<T> {
         id: *const bindings::pci_device_id,
     ) -> core::ffi::c_int {
         from_kernel_result! {
+            // SAFETY: `pdev` is valid by the contract with the C code. `dev` is alive only for the
+            // duration of this call, so it is guaranteed to remain alive for the lifetime of
+            // `pdev`.
             let mut dev = unsafe { Device::from_ptr(pdev) };
 
             // SAFETY: `id` is a pointer within the static table, so it's always valid.
@@ -60,13 +75,22 @@ impl<T: Driver> Adapter<T> {
                 unsafe {(&*ptr).as_ref()}
             };
             let data = T::probe(&mut dev, info)?;
+             // SAFETY: `pdev` is guaranteed to be a valid, non-null pointer.
             unsafe { bindings::pci_set_drvdata(pdev, data.into_foreign() as _) };
             Ok(0)
         }
     }
 
     extern "C" fn remove_callback(pdev: *mut bindings::pci_dev) {
+        // SAFETY: `pdev` is guaranteed to be a valid, non-null pointer.
         let ptr = unsafe { bindings::pci_get_drvdata(pdev) };
+
+        // SAFETY:
+        //   - we allocated this pointer using `T::Data::into_pointer`,
+        //     so it is safe to turn back into a `T::Data`.
+        //   - the allocation happened in `probe`, no-one freed the memory,
+        //     `remove` is the canonical kernel location to free driver data. so OK
+        //     to convert the pointer back to a Rust structure here.
         let data = unsafe { T::Data::from_foreign(ptr) };
         T::remove(&data);
         <T::Data as driver::DeviceRemoval>::device_remove(&data);
@@ -189,6 +213,11 @@ pub trait Driver {
     // TODO: Data Send + Sync ?
     //type Data: ForeignOwnable + Send + Sync + driver::DeviceRemoval = ();
     type Data: ForeignOwnable + driver::DeviceRemoval = ();
+    /*
+    /// Require that `Data` implements `PointerWrapper`. We guarantee to
+    /// never move the underlying wrapped data structure.
+    type Data: PointerWrapper + Send + Sync + driver::DeviceRemoval = ();
+    */
 
     /// The type holding information about each device id supported by the driver.
     type IdInfo: 'static = ();
@@ -220,6 +249,12 @@ pub struct Device {
 }
 
 impl Device {
+    /// Creates a new PCI device from the given pointer.
+    ///
+    /// # Safety
+    ///
+    /// `ptr` must be non-null and valid. It must remain valid for the lifetime of 
+    /// the returned instance.
     pub unsafe fn from_ptr(ptr: *mut bindings::pci_dev) -> Self {
         Self { ptr, res_taken: 0 }
     }
@@ -237,15 +272,32 @@ impl Device {
         }
     }
 
+    /// Initialize device
+    pub fn enable_device(&mut self) -> Result {
+        // SAFETY: By the type invariants, we know that `self.ptr` is non-null and valid.
+        let ret = unsafe { bindings::pci_enable_device(self.ptr) };
+        if ret != 0 {
+            Err(Error::from_kernel_errno(ret))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// enables bus-mastering for device
     pub fn set_master(&self) {
+        // SAFETY: By the type invariants, we know that `self.ptr` is non-null and valid.
         unsafe { bindings::pci_set_master(self.ptr) };
     }
 
+    /// Return BAR mask from the type of resource
     pub fn select_bars(&self, flags: core::ffi::c_ulong) -> i32 {
+        // SAFETY: By the type invariants, we know that `self.ptr` is non-null and valid.
         unsafe { bindings::pci_select_bars(self.ptr, flags) }
     }
 
+    /// Reserve selected PCI I/O and memory resources
     pub fn request_selected_regions(&self, bars: i32, name: &'static CStr) -> Result {
+        // SAFETY: By the type invariants, we know that `self.ptr` is non-null and valid.
         let ret =
             unsafe { bindings::pci_request_selected_regions(self.ptr, bars, name.as_char_ptr()) };
         if ret != 0 {
@@ -253,6 +305,22 @@ impl Device {
         } else {
             Ok(())
         }
+    }
+
+    /// iter PCI Resouces
+    pub fn iter_resource(&self) -> impl Iterator<Item = PciResource> + '_ {
+        // SAFETY: By the type invariants, we know that `self.ptr` is non-null and valid.
+        let pdev = unsafe { &*self.ptr };
+        pdev.resource.iter().map(|x| PciResource {
+            start: x.start,
+            end: x.end,
+            flags: x.flags,
+        })
+    }
+
+    /// Get address for accessing the device
+    pub fn map_resource(&self, resource: &PciResource, len: usize) -> Result<MappedResource> {
+        MappedResource::try_new(resource.start, len)
     }
 
     pub fn take_resource(&mut self, index: usize) -> Option<Resource> {
@@ -267,7 +335,9 @@ impl Device {
         Resource::new(pdev.resource[index].start, pdev.resource[index].end)
     }
 
+    /// get legacy irq number
     pub fn irq(&self) -> Option<u32> {
+        // SAFETY: By the type invariants, we know that `self.ptr` is non-null and valid.
         let pdev = unsafe { &*self.ptr };
 
         if pdev.irq == 0 {
@@ -349,4 +419,166 @@ unsafe impl device::RawDevice for Device {
         // SAFETY: By the type invariants, we know that `self.ptr` is non-null and valid.
         unsafe { &mut (*self.ptr).dev }
     }
+}
+
+// pci.rs from fujita/linux-rust-e1000
+
+/// PCI devices and drivers.
+///
+/// C header: [`include/linux/pci.h`](../../../../include/linux/pci.h)
+
+use crate::{
+    error::code::{EINVAL, ENOMEM},
+    //types::PointerWrapper,
+};
+
+/// PCI resource
+pub struct PciResource {
+    start: bindings::resource_size_t,
+    end: bindings::resource_size_t,
+    flags: u64,
+}
+
+impl PciResource {
+    /// resource length
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        if self.end == 0 {
+            0
+        } else {
+            (self.end - self.start + 1) as usize
+        }
+    }
+
+    /// check resource flags
+    pub fn check_flags(&self, bits: u32) -> bool {
+        self.flags & (bits as u64) > 0
+    }
+}
+
+/// Address for accessing the device
+/// io_mem.rs requires const size but some drivers have to handle
+/// non const size with ioremap().
+pub struct MappedResource {
+    /// address
+    pub ptr: usize,
+    len: usize,
+}
+
+macro_rules! define_read {
+    ($(#[$attr:meta])* $name:ident, $type_name:ty) => {
+        /// Reads IO data from the given offset
+        $(#[$attr])*
+        #[inline]
+        pub fn $name(&self, offset: usize) -> Result<$type_name> {
+            if offset + core::mem::size_of::<$type_name>() > self.len {
+                return Err(EINVAL);
+            }
+            // SAFETY: The type invariants guarantee that `ptr` is a valid pointer. The check above
+            // guarantees that the code won't link if `offset` makes the write go out of bounds
+            // (including the type size).
+            let ptr = self.ptr.wrapping_add(offset);
+            Ok(unsafe { bindings::$name(ptr as _) })
+        }
+    };
+}
+
+macro_rules! define_write {
+    ($(#[$attr:meta])* $name:ident, $type_name:ty) => {
+        /// Writes IO data to the given offset
+        $(#[$attr])*
+        #[inline]
+        pub fn $name(&self, value: $type_name, offset: usize) -> Result {
+            if offset + core::mem::size_of::<$type_name>() > self.len {
+                return Err(EINVAL);
+            }
+            // SAFETY: The type invariants guarantee that `ptr` is a valid pointer. The check above
+            // guarantees that the code won't link if `offset` makes the write go out of bounds
+            // (including the type size).
+            let ptr = self.ptr.wrapping_add(offset);
+            unsafe { bindings::$name(value, ptr as _) };
+            Ok(())
+        }
+   };
+}
+
+impl MappedResource {
+    fn try_new(offset: bindings::resource_size_t, len: usize) -> Result<Self> {
+        let addr = unsafe { bindings::ioremap(offset, len as _) };
+        if addr.is_null() {
+            Err(ENOMEM)
+        } else {
+            Ok(Self {
+                ptr: addr as usize,
+                len,
+            })
+        }
+    }
+
+    define_read!(readb, u8);
+    define_read!(readb_relaxed, u8);
+    define_read!(readw, u16);
+    define_read!(readw_relaxed, u16);
+    define_read!(readl, u32);
+    define_read!(readl_relaxed, u32);
+    define_read!(
+        #[cfg(CONFIG_64BIT)]
+        readq,
+        u64
+    );
+    define_read!(
+        #[cfg(CONFIG_64BIT)]
+        readq_relaxed,
+        u64
+    );
+
+    define_write!(writeb, u8);
+    define_write!(writeb_relaxed, u8);
+    define_write!(writew, u16);
+    define_write!(writew_relaxed, u16);
+    define_write!(writel, u32);
+    define_write!(writel_relaxed, u32);
+    define_write!(
+        #[cfg(CONFIG_64BIT)]
+        writeq,
+        u64
+    );
+    define_write!(
+        #[cfg(CONFIG_64BIT)]
+        writeq_relaxed,
+        u64
+    );
+}
+
+impl Drop for MappedResource {
+    fn drop(&mut self) {
+        unsafe {
+            // SAFETY: By the type invariants, we know that `self.ptr` is non-null and valid.
+            bindings::iounmap(self.ptr as _);
+        }
+    }
+}
+
+///
+pub struct IoPort {
+    ptr: usize,
+    len: usize,
+}
+
+impl IoPort {
+    ///
+    pub fn try_new(re: &PciResource) -> Result<Self> {
+        Ok(Self {
+            ptr: re.start as usize,
+            len: re.len(),
+        })
+    }
+
+    define_read!(inb, u8);
+    define_read!(inw, u16);
+    define_read!(inl, u32);
+
+    define_write!(outb, u8);
+    define_write!(outw, u16);
+    define_write!(outl, u32);
 }

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
+#![allow(unused)]
 
 use crate::{
     bindings, error::code::*, error::from_kernel_err_ptr, error::from_kernel_result, sync::Arc,
