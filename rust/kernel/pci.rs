@@ -82,6 +82,8 @@ impl<T: Driver> Adapter<T> {
     }
 
     extern "C" fn remove_callback(pdev: *mut bindings::pci_dev) {
+        let mut dev = unsafe { Device::from_ptr(pdev) };
+
         // SAFETY: `pdev` is guaranteed to be a valid, non-null pointer.
         let ptr = unsafe { bindings::pci_get_drvdata(pdev) };
 
@@ -92,7 +94,7 @@ impl<T: Driver> Adapter<T> {
         //     `remove` is the canonical kernel location to free driver data. so OK
         //     to convert the pointer back to a Rust structure here.
         let data = unsafe { T::Data::from_foreign(ptr) };
-        T::remove(&data);
+        T::remove(&mut dev, &data);
         <T::Data as driver::DeviceRemoval>::device_remove(&data);
     }
 }
@@ -235,7 +237,7 @@ pub trait Driver {
     ///
     /// Called when a platform device is removed.
     /// Implementers should prepare the device for complete removal here.
-    fn remove(_data: &Self::Data);
+    fn remove(dev: &mut Device, data: &Self::Data);
 }
 
 /// A PCI device.
@@ -304,6 +306,13 @@ impl Device {
             Err(Error::from_kernel_errno(ret))
         } else {
             Ok(())
+        }
+    }
+
+    /// Release selected PCI I/O and memory resources previously reserved.
+    pub fn release_selected_regions(&self, bars: i32) {
+        unsafe {
+            bindings::pci_release_selected_regions(self.ptr, bars);
         }
     }
 
