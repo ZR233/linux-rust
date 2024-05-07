@@ -17,7 +17,46 @@
 #include <linux/sched.h>
 #include <linux/workqueue.h>
 
+#include <linux/amba/bus.h>
+#include <linux/cdev.h>
+#include <linux/clk.h>
+#include <linux/file.h>
+#include <linux/fs.h>
+#include <linux/fs_parser.h>
+#include <linux/gpio/driver.h>
+#include <linux/hw_random.h>
+#include <linux/interrupt.h>
+#include <linux/io.h>
+#include <linux/irqdomain.h>
+#include <linux/irq.h>
+#include <linux/miscdevice.h>
+#include <linux/module.h>
+#include <linux/netfilter_arp.h>
+#include <linux/netfilter.h>
+#include <linux/netfilter_ipv4.h>
+#include <linux/netfilter_ipv6.h>
+#include <linux/of_platform.h>
+#include <linux/pci.h>
+#include <linux/platform_device.h>
+#include <linux/poll.h>
+#include <linux/random.h>
+#include <linux/security.h>
+#include <linux/sysctl.h>
+#include <linux/uaccess.h>
+#include <linux/uio.h>
+#include <linux/blk_types.h>
+#include <linux/blk-mq.h>
+#include <linux/blk-mq-pci.h>
+
 /* `bindgen` gets confused at certain things. */
 const size_t RUST_CONST_HELPER_ARCH_SLAB_MINALIGN = ARCH_SLAB_MINALIGN;
 const gfp_t RUST_CONST_HELPER_GFP_KERNEL = GFP_KERNEL;
 const gfp_t RUST_CONST_HELPER___GFP_ZERO = __GFP_ZERO;
+const gfp_t RUST_CONST_HELPER_GFP_ATOMIC = GFP_ATOMIC;
+
+const __poll_t RUST_CONST_HELPER_EPOLLIN = EPOLLIN;
+const __poll_t RUST_CONST_HELPER_EPOLLOUT = EPOLLOUT;
+const __poll_t RUST_CONST_HELPER_EPOLLERR = EPOLLERR;
+const __poll_t RUST_CONST_HELPER_EPOLLHUP = EPOLLHUP;
+
+const loff_t RUST_CONST_HELPER_MAX_LFS_FILESIZE = MAX_LFS_FILESIZE;
