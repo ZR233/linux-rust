@@ -6,7 +6,9 @@
 //! [`include/linux/netdevice.h`](../../../../include/linux/netdevice.h),
 //! [`include/linux/skbuff.h`](../../../../include/linux/skbuff.h).
 
-use crate::{bindings, str::CStr, types::ForeignOwnable, to_result, ARef, AlwaysRefCounted, Error, Result};
+use crate::{
+    bindings, str::CStr, to_result, types::ForeignOwnable, ARef, AlwaysRefCounted, Error, Result,
+};
 use core::{cell::UnsafeCell, ptr::NonNull};
 
 #[cfg(CONFIG_NETFILTER)]
@@ -139,6 +141,19 @@ impl SkBuff {
         }
     }
 
+    /// Driver hook for transmit timestamping
+    ///
+    /// Ethernet MAC Drivers should call this function in their hard_xmit()
+    /// function immediately before giving the sk_buff to the MAC hardware.
+    ///
+    /// Specifically, one should make absolutely sure that this function is
+    /// called before TX completion of this packet can trigger.  Otherwise
+    /// the packet could potentially already be freed.
+    pub fn tx_timestamp(&self) {
+        unsafe {
+            bindings::skb_tx_timestamp(self.0.get());
+        }
+    }
 }
 
 // SAFETY: Instances of `SkBuff` are created on the C side. They are always refcounted.
@@ -441,7 +456,6 @@ impl Drop for TcpStream {
 /// C headers: [`include/net/net_namespace.h`](../../../../include/linux/net/net_namespace.h),
 /// [`include/linux/netdevice.h`](../../../../include/linux/netdevice.h),
 /// [`include/linux/skbuff.h`](../../../../include/linux/skbuff.h).
-
 use crate::{
     device,
     error::{code::ENOMEM, from_kernel_result},
@@ -703,8 +717,12 @@ impl<T: DeviceOperations> Registration<T> {
         ndo_fcoe_get_wwn: None,
         #[cfg(CONFIG_RFS_ACCEL)]
         ndo_rx_flow_steer: None,
-        ndo_add_slave: None, ndo_bpf: None, ndo_bridge_dellink: None,
-        ndo_bridge_getlink:None, ndo_bridge_setlink: None, ndo_change_carrier:None,
+        ndo_add_slave: None,
+        ndo_bpf: None,
+        ndo_bridge_dellink: None,
+        ndo_bridge_getlink: None,
+        ndo_bridge_setlink: None,
+        ndo_change_carrier: None,
         ndo_del_slave: None,
         ndo_get_xmit_slave: None,
         ndo_sk_get_lower_dev: None,
@@ -740,7 +758,6 @@ impl<T: DeviceOperations> Registration<T> {
         ndo_get_tstamp: None,
         ndo_hwtstamp_get: None,
         ndo_hwtstamp_set: None,
-        
     };
 
     const fn build_device_ops() -> &'static bindings::net_device_ops {

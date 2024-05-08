@@ -846,6 +846,12 @@ int rust_helper_skb_put_padto(struct sk_buff *skb, unsigned int len) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_skb_put_padto);
 
+void rust_helper_skb_tx_timestamp(struct sk_buff *skb) {
+	return skb_tx_timestamp(skb);
+}
+EXPORT_SYMBOL_GPL(rust_helper_skb_tx_timestamp);
+
+
 void rust_helper_netdev_completed_queue(struct net_device *dev, unsigned int pkts,
 		unsigned int bytes) {
 	netdev_completed_queue(dev, pkts, bytes);

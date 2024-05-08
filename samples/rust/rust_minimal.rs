@@ -2,7 +2,10 @@
 
 //! Rust minimal sample.
 
+use core::any::Any;
+
 use kernel::prelude::*;
+use kernel::box_ext::BoxExt;
 
 module! {
     type: RustMinimal,
@@ -25,6 +28,11 @@ impl kernel::Module for RustMinimal {
         numbers.try_push(72)?;
         numbers.try_push(108)?;
         numbers.try_push(200)?;
+
+        let b = Box::try_new_atomic(1)?;
+        
+
+        pr_info!("Rust minimal sample {:?}\n", b.type_id());
 
         Ok(RustMinimal { numbers })
     }
