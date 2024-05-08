@@ -16,6 +16,7 @@ use crate::{
     types::ForeignOwnable,
     user_ptr::{UserSlicePtr, UserSlicePtrReader, UserSlicePtrWriter},
     ARef, AlwaysRefCounted,
+    str::CStr,
 };
 use core::convert::{TryFrom, TryInto};
 use core::{cell::UnsafeCell, marker, mem, ptr};
@@ -775,6 +776,9 @@ pub trait OpenAdapter<T: Sync> {
 /// thread that decrements that associated file's refcount to zero.
 #[vtable]
 pub trait Operations {
+    /// The friendly name of this type.
+    const NAME: &'static CStr;
+
     /// The type of the context data returned by [`Operations::open`] and made available to
     /// other methods.
     type Data: ForeignOwnable + Send + Sync = ();

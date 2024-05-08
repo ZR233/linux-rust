@@ -146,7 +146,7 @@ pub trait Module: Sized + Sync {
     /// should do.
     ///
     /// Equivalent to the `module_init` macro in the C API.
-    fn init(name: &'static str::CStr, module: &'static ThisModule) -> Result<Self>;
+    fn init(module: &'static ThisModule) -> error::Result<Self>;
 }
 
 /// Equivalent to `THIS_MODULE` in the C API.
@@ -166,7 +166,6 @@ impl ThisModule {
     pub const unsafe fn from_ptr(ptr: *mut bindings::module) -> ThisModule {
         ThisModule(ptr)
     }
-
     /// Locks the module parameters to access them.
     ///
     /// Returns a [`KParamGuard`] that will release the lock when dropped.
@@ -268,21 +267,6 @@ macro_rules! container_of {
     }}
 }
 
-// #[cfg(not(any(testlib, test)))]
-// #[panic_handler]
-// fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
-//     pr_emerg!("{}\n", info);
-//     // SAFETY: FFI call.
-//     unsafe { bindings::BUG() };
-//     // Bindgen currently does not recognize `__noreturn` so `BUG` returns `()`
-//     // instead of `!`. See <https://github.com/rust-lang/rust-bindgen/issues/2094>.
-//     // loop {}
-//     pr_emerg!("{}\n", info);
-//     // SAFETY: FFI call.
-//     unsafe { bindings::BUG() };
-// }
-
-
 #[cfg(not(any(testlib, test)))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
@@ -290,6 +274,8 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     // SAFETY: FFI call.
     unsafe { bindings::BUG() };
 }
+
+
 
 /// Returns maximum number of CPUs that may be online on the system.
 pub fn num_possible_cpus() -> u32 {

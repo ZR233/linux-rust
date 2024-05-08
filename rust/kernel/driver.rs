@@ -11,6 +11,11 @@ use core::{cell::UnsafeCell, marker::PhantomData, ops::Deref, pin::Pin};
 
 /// A subsystem (e.g., PCI, Platform, Amba, etc.) that allows drivers to be written for it.
 pub trait DriverOps {
+ 
+ 
+    /// The friendly name of this DriverOps type.
+    const NAME: &'static CStr;
+
     /// The type that holds information about the registration. This is typically a struct defined
     /// by the C portion of the kernel.
     type RegType: Default;
@@ -419,7 +424,9 @@ pub struct Module<T: DriverOps> {
 }
 
 impl<T: DriverOps> crate::Module for Module<T> {
-    fn init(name: &'static CStr, module: &'static ThisModule) -> Result<Self> {
+    fn init(module: &'static ThisModule) -> Result<Self> {
+        let name = T::NAME;
+
         Ok(Self {
             _driver: Registration::new_pinned(name, module)?,
         })

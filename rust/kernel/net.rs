@@ -11,6 +11,8 @@ use core::{cell::UnsafeCell, ptr::NonNull};
 
 #[cfg(CONFIG_NETFILTER)]
 pub mod filter;
+#[cfg(CONFIG_RUST_PHYLIB_ABSTRACTIONS)]
+pub mod phy;
 
 /// Wraps the kernel's `struct net_device`.
 #[repr(transparent)]

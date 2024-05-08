@@ -7,15 +7,7 @@
 //! C header: [`include/linux/platform_device.h`](../../../../include/linux/platform_device.h)
 
 use crate::{
-    bindings,
-    device::{self, RawDevice},
-    driver,
-    error::{from_kernel_result, Result},
-    of,
-    str::CStr,
-    to_result,
-    types::ForeignOwnable,
-    ThisModule,
+    bindings, c_str, device::{self, RawDevice}, driver, error::{from_kernel_result, Result}, of, str::CStr, to_result, types::ForeignOwnable, ThisModule
 };
 
 /// A registration of a platform driver.
@@ -58,6 +50,8 @@ impl<T: Driver> driver::DriverOps for Adapter<T> {
         // `platform_driver_register`.
         unsafe { bindings::platform_driver_unregister(reg) };
     }
+    
+    const NAME: &'static CStr = c_str!("platform");
 }
 
 impl<T: Driver> Adapter<T> {

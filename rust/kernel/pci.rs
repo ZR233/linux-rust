@@ -7,14 +7,7 @@
 #![allow(dead_code)]
 
 use crate::{
-    bindings, bit, device, driver,
-    error::{from_kernel_result, Result},
-    io_mem::Resource,
-    irq,
-    str::CStr,
-    to_result,
-    types::ForeignOwnable,
-    Error, ThisModule,
+    bindings, bit, c_str, device, driver, error::{from_kernel_result, Result}, io_mem::Resource, irq, str::CStr, to_result, types::ForeignOwnable, Error, ThisModule
 };
 use core::fmt;
 
@@ -53,6 +46,8 @@ impl<T: Driver> driver::DriverOps for Adapter<T> {
         // `__pci_register_driver`.
         unsafe { bindings::pci_unregister_driver(reg) }
     }
+    
+    const NAME: &'static CStr= c_str!("PCI");
 }
 
 impl<T: Driver> Adapter<T> {
