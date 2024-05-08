@@ -135,10 +135,10 @@
 /// ```
 ///
 /// [`std::dbg`]: https://doc.rust-lang.org/std/macro.dbg.html
+/// [`pr_info`]: crate::pr_info
+/// [`pr_debug`]: crate::pr_debug
 /// [`eprintln`]: https://doc.rust-lang.org/std/macro.eprintln.html
 /// [`printk`]: https://www.kernel.org/doc/html/latest/core-api/printk-basics.html
-/// [`pr_info`]: crate::pr_info!
-/// [`pr_debug`]: crate::pr_debug!
 #[macro_export]
 macro_rules! dbg {
     // NOTE: We cannot use `concat!` to make a static string as a format argument

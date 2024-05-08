@@ -2,9 +2,8 @@
 
 //! A wrapper for data protected by a lock that does not wrap it.
 
-use super::{lock::Backend, lock::Lock};
-use crate::build_assert;
-use core::{cell::UnsafeCell, mem::size_of, ptr};
+use super::{Guard, Lock};
+use core::{cell::UnsafeCell, ops::Deref, ptr};
 
 /// Allows access to some data to be serialised by a lock that does not wrap it.
 ///
@@ -14,8 +13,7 @@ use core::{cell::UnsafeCell, mem::size_of, ptr};
 /// to be protected by the same lock.
 ///
 /// [`LockedBy`] wraps the data in lieu of another locking primitive, and only allows access to it
-/// when the caller shows evidence that the 'external' lock is locked. It panics if the evidence
-/// refers to the wrong instance of the lock.
+/// when the caller shows evidence that 'external' lock is locked.
 ///
 /// # Examples
 ///
@@ -33,58 +31,34 @@ use core::{cell::UnsafeCell, mem::size_of, ptr};
 /// }
 ///
 /// struct File {
-///     _ino: u32,
-///     inner: LockedBy<InnerFile, InnerDirectory>,
+///     name: String,
+///     inner: LockedBy<InnerFile, Mutex<InnerDirectory>>,
 /// }
 ///
 /// struct InnerDirectory {
 ///     /// The sum of the bytes used by all files.
 ///     bytes_used: u64,
-///     _files: Vec<File>,
+///     files: Vec<File>,
 /// }
 ///
 /// struct Directory {
-///     _ino: u32,
+///     name: String,
 ///     inner: Mutex<InnerDirectory>,
 /// }
-///
-/// /// Prints `bytes_used` from both the directory and file.
-/// fn print_bytes_used(dir: &Directory, file: &File) {
-///     let guard = dir.inner.lock();
-///     let inner_file = file.inner.access(&guard);
-///     pr_info!("{} {}", guard.bytes_used, inner_file.bytes_used);
-/// }
-///
-/// /// Increments `bytes_used` for both the directory and file.
-/// fn inc_bytes_used(dir: &Directory, file: &File) {
-///     let mut guard = dir.inner.lock();
-///     guard.bytes_used += 10;
-///
-///     let file_inner = file.inner.access_mut(&mut guard);
-///     file_inner.bytes_used += 10;
-/// }
-///
-/// /// Creates a new file.
-/// fn new_file(ino: u32, dir: &Directory) -> File {
-///     File {
-///         _ino: ino,
-///         inner: LockedBy::new(&dir.inner, InnerFile { bytes_used: 0 }),
-///     }
-/// }
 /// ```
-pub struct LockedBy<T: ?Sized, U: ?Sized> {
-    owner: *const U,
+pub struct LockedBy<T: ?Sized, L: Lock + ?Sized> {
+    owner: *const L::Inner,
     data: UnsafeCell<T>,
 }
 
 // SAFETY: `LockedBy` can be transferred across thread boundaries iff the data it protects can.
-unsafe impl<T: ?Sized + Send, U: ?Sized> Send for LockedBy<T, U> {}
+unsafe impl<T: ?Sized + Send, L: Lock + ?Sized> Send for LockedBy<T, L> {}
 
 // SAFETY: `LockedBy` serialises the interior mutability it provides, so it is `Sync` as long as the
 // data it protects is `Send`.
-unsafe impl<T: ?Sized + Send, U: ?Sized> Sync for LockedBy<T, U> {}
+unsafe impl<T: ?Sized + Send, L: Lock + ?Sized> Sync for LockedBy<T, L> {}
 
-impl<T, U> LockedBy<T, U> {
+impl<T, L: Lock + ?Sized> LockedBy<T, L> {
     /// Constructs a new instance of [`LockedBy`].
     ///
     /// It stores a raw pointer to the owner that is never dereferenced. It is only used to ensure
@@ -92,60 +66,41 @@ impl<T, U> LockedBy<T, U> {
     /// data becomes inaccessible; if another instance of the owner is allocated *on the same
     /// memory location*, the data becomes accessible again: none of this affects memory safety
     /// because in any case at most one thread (or CPU) can access the protected data at a time.
-    pub fn new<B: Backend>(owner: &Lock<U, B>, data: T) -> Self {
-        build_assert!(
-            size_of::<Lock<U, B>>() > 0,
-            "The lock type cannot be a ZST because it may be impossible to distinguish instances"
-        );
+    pub fn new(owner: &L, data: T) -> Self {
         Self {
-            owner: owner.data.get(),
+            owner: owner.locked_data().get(),
             data: UnsafeCell::new(data),
         }
     }
 }
 
-impl<T: ?Sized, U> LockedBy<T, U> {
+impl<T: ?Sized, L: Lock + ?Sized> LockedBy<T, L> {
     /// Returns a reference to the protected data when the caller provides evidence (via a
-    /// reference) that the owner is locked.
-    ///
-    /// `U` cannot be a zero-sized type (ZST) because there are ways to get an `&U` that matches
-    /// the data protected by the lock without actually holding it.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `owner` is different from the data protected by the lock used in
-    /// [`new`](LockedBy::new).
-    pub fn access<'a>(&'a self, owner: &'a U) -> &'a T {
-        build_assert!(
-            size_of::<U>() > 0,
-            "`U` cannot be a ZST because `owner` wouldn't be unique"
-        );
-        if !ptr::eq(owner, self.owner) {
-            panic!("mismatched owners");
+    /// [`Guard`]) that the owner is locked.
+    pub fn access<'a>(&'a self, guard: &'a Guard<'_, L>) -> &'a T {
+        if !ptr::eq(guard.deref(), self.owner) {
+            panic!("guard does not match owner");
         }
 
-        // SAFETY: `owner` is evidence that the owner is locked.
-        unsafe { &*self.data.get() }
+        // SAFETY: `guard` is evidence that the owner is locked.
+        unsafe { &mut *self.data.get() }
     }
 
     /// Returns a mutable reference to the protected data when the caller provides evidence (via a
-    /// mutable owner) that the owner is locked mutably.
-    ///
-    /// `U` cannot be a zero-sized type (ZST) because there are ways to get an `&mut U` that
-    /// matches the data protected by the lock without actually holding it.
-    ///
-    /// Showing a mutable reference to the owner is sufficient because we know no other references
-    /// can exist to it.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `owner` is different from the data protected by the lock used in
-    /// [`new`](LockedBy::new).
-    pub fn access_mut<'a>(&'a self, owner: &'a mut U) -> &'a mut T {
-        build_assert!(
-            size_of::<U>() > 0,
-            "`U` cannot be a ZST because `owner` wouldn't be unique"
-        );
+    /// mutable [`Guard`]) that the owner is locked mutably.
+    pub fn access_mut<'a>(&'a self, guard: &'a mut Guard<'_, L>) -> &'a mut T {
+        if !ptr::eq(guard.deref().deref(), self.owner) {
+            panic!("guard does not match owner");
+        }
+
+        // SAFETY: `guard` is evidence that the owner is locked.
+        unsafe { &mut *self.data.get() }
+    }
+
+    /// Returns a mutable reference to the protected data when the caller provides evidence (via a
+    /// mutable owner) that the owner is locked mutably. Showing a mutable reference to the owner
+    /// is sufficient because we know no other references can exist to it.
+    pub fn access_from_mut<'a>(&'a self, owner: &'a mut L::Inner) -> &'a mut T {
         if !ptr::eq(owner, self.owner) {
             panic!("mismatched owners");
         }

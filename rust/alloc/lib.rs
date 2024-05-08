@@ -199,6 +199,7 @@
 #![feature(unboxed_closures)]
 #![feature(unsized_fn_params)]
 #![feature(with_negative_coherence)]
+#![feature(const_cow_is_borrowed)]
 // tidy-alphabetical-end
 //
 // Rustdoc features:
@@ -241,19 +242,19 @@ pub mod boxed;
 mod boxed {
     pub use std::boxed::Box;
 }
-#[cfg(not(no_borrow))]
+// #[cfg(not(no_borrow))]
 pub mod borrow;
 pub mod collections;
 #[cfg(all(not(no_rc), not(no_sync), not(no_global_oom_handling)))]
 pub mod ffi;
-#[cfg(not(no_fmt))]
+// #[cfg(not(no_fmt))]
 pub mod fmt;
 #[cfg(not(no_rc))]
 pub mod rc;
 pub mod slice;
-#[cfg(not(no_str))]
+// #[cfg(not(no_str))]
 pub mod str;
-#[cfg(not(no_string))]
+// #[cfg(not(no_string))]
 pub mod string;
 #[cfg(all(not(no_rc), not(no_sync), target_has_atomic = "ptr"))]
 pub mod sync;

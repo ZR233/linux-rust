@@ -20,6 +20,8 @@
  * Sorted alphabetically.
  */
 
+#include "linux/fs_context.h"
+#include "linux/sysctl.h"
 #include <kunit/test-bug.h>
 #include <linux/bug.h>
 #include <linux/build_bug.h>
@@ -35,6 +37,7 @@
 #include <linux/amba/bus.h>
 #include <linux/clk.h>
 #include <linux/fs_parser.h>
+#include <linux/fs_context.h>
 #include <linux/gfp.h>
 #include <linux/highmem.h>
 #include <linux/io.h>
@@ -897,7 +900,10 @@ void rust_helper_ndelay(unsigned long nsecs) {
 }
 EXPORT_SYMBOL_GPL(rust_helper_ndelay);
 
-
+// struct ctl_table_header *rust_helper_register_sysctl(const char *path, struct ctl_table *table) {
+// 	return register_sysctl(path, table);
+// }
+// EXPORT_SYMBOL_GPL(rust_helper_register_sysctl);
 
 // -----
 
