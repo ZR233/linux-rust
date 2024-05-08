@@ -115,7 +115,7 @@ unsafe extern "C" fn proc_handler<T: SysctlStorage>(
     let (bytes_processed, result) = if write != 0 {
         let data = match data.read_all() {
             Ok(r) => r,
-            Err(e) => return e.to_kernel_errno(),
+            Err(e) => return e.to_errno(),
         };
         storage.store_value(&data)
     } else {
@@ -126,7 +126,7 @@ unsafe extern "C" fn proc_handler<T: SysctlStorage>(
     unsafe { *ppos += *len as bindings::loff_t };
     match result {
         Ok(()) => 0,
-        Err(e) => e.to_kernel_errno(),
+        Err(e) => e.to_errno(),
     }
 }
 

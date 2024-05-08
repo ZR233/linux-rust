@@ -216,7 +216,7 @@ impl Error {
     }
 
     /// Returns the kernel error code.
-    pub fn to_kernel_errno(self) -> core::ffi::c_int {
+    pub fn to_errno(self) -> core::ffi::c_int {
         self.0
     }
 
@@ -337,7 +337,7 @@ where
         // NO-OVERFLOW: negative `errno`s are no smaller than `-bindings::MAX_ERRNO`,
         // `-bindings::MAX_ERRNO` fits in an `i16` as per invariant above,
         // therefore a negative `errno` always fits in an `i16` and will not overflow.
-        Err(e) => T::from(e.to_kernel_errno() as i16),
+        Err(e) => T::from(e.to_errno() as i16),
     }
 }
 

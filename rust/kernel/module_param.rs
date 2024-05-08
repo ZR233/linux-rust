@@ -80,7 +80,7 @@ pub trait ModuleParam: core::fmt::Display + core::marker::Sized {
                 let _ = unsafe { core::ptr::replace(old_value, new_value) };
                 0
             }
-            None => EINVAL.to_kernel_errno(),
+            None => EINVAL.to_errno(),
         }
     }
 

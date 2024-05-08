@@ -154,7 +154,7 @@ impl<T: Type + ?Sized> Tables<T> {
                 return Ok(0);
             }
 
-            if opt != ENOPARAM.to_kernel_errno() {
+            if opt != ENOPARAM.to_errno() {
                 return Err(Error::from_kernel_errno(opt));
             }
 
@@ -266,7 +266,7 @@ impl<T: Type + ?Sized> Tables<T> {
     }
 
     unsafe extern "C" fn reconfigure_callback(_fc: *mut bindings::fs_context) -> core::ffi::c_int {
-        EINVAL.to_kernel_errno()
+        EINVAL.to_errno()
     }
 
     unsafe extern "C" fn parse_monolithic_callback(
