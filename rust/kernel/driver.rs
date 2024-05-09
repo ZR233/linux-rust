@@ -11,8 +11,6 @@ use core::{cell::UnsafeCell, marker::PhantomData, ops::Deref, pin::Pin};
 
 /// A subsystem (e.g., PCI, Platform, Amba, etc.) that allows drivers to be written for it.
 pub trait DriverOps {
- 
- 
     /// The friendly name of this DriverOps type.
     const NAME: &'static CStr;
 
@@ -145,6 +143,7 @@ pub unsafe trait RawDeviceId {
     fn to_rawid(&self, offset: isize) -> Self::RawType;
 }
 
+
 /// A zero-terminated device id array, followed by context data.
 #[repr(C)]
 pub struct IdArray<T: RawDeviceId, U, const N: usize> {
@@ -153,17 +152,54 @@ pub struct IdArray<T: RawDeviceId, U, const N: usize> {
     id_infos: [Option<U>; N],
 }
 
-impl <T:RawDeviceId, U, const N: usize> IdArray<T, U, N> {
+// impl<T, U, const N: usize> IdArray<T, U, N>
+// where
+//     T: ~const RawDeviceId + Copy,
+// {
+//     /// Creates a new instance of the array.
+//     ///
+//     /// The contents are derived from the given identifiers and context information.
+//     pub  fn new(ids: [T; N], infos: [Option<U>; N]) -> Self {
+//         let mut array = Self {
+//             ids: [T::ZERO; N],
+//             sentinel: T::ZERO,
+//             id_infos: infos,
+//         };
+//         let mut i = 0usize;
+//         while i < N {
+//             // SAFETY: Both pointers are within `array` (or one byte beyond), consequently they are
+//             // derived from the same allocated object. We are using a `u8` pointer, whose size 1,
+//             // so the pointers are necessarily 1-byte aligned.
+//             let offset = unsafe {
+//                 (&array.id_infos[i] as *const _ as *const u8)
+//                     .offset_from(&array.ids[i] as *const _ as _)
+//             };
+//             array.ids[i] = ids[i].to_rawid(offset);
+//             i += 1;
+//         }
+//         array
+//     }
+
+//     /// Returns an `IdTable` backed by `self`.
+//     ///
+//     /// This is used to essentially erase the array size.
+//     pub const fn as_table(&self) -> IdTable<'_, T, U> {
+//         IdTable {
+//             first: &self.ids[0],
+//             _p: PhantomData,
+//         }
+//     }
+// }
+
+impl<U, const N: usize> IdArray<crate::pci::DeviceId, U, N>
+{
     /// Creates a new instance of the array.
     ///
     /// The contents are derived from the given identifiers and context information.
-    pub fn new(ids: [T; N], infos: [Option<U>; N]) -> Self
-    where
-        T: ~const RawDeviceId + Copy,
-    {
+    pub const fn new(ids: [crate::pci::DeviceId; N], infos: [Option<U>; N]) -> Self {
         let mut array = Self {
-            ids: [T::ZERO; N],
-            sentinel: T::ZERO,
+            ids: [crate::pci::DeviceId::ZERO; N],
+            sentinel: crate::pci::DeviceId::ZERO,
             id_infos: infos,
         };
         let mut i = 0usize;
@@ -175,7 +211,7 @@ impl <T:RawDeviceId, U, const N: usize> IdArray<T, U, N> {
                 (&array.id_infos[i] as *const _ as *const u8)
                     .offset_from(&array.ids[i] as *const _ as _)
             };
-            array.ids[i] =  ids[i].to_rawid(offset);
+            array.ids[i] = ids[i].to_rawid(offset);
             i += 1;
         }
         array
@@ -184,13 +220,15 @@ impl <T:RawDeviceId, U, const N: usize> IdArray<T, U, N> {
     /// Returns an `IdTable` backed by `self`.
     ///
     /// This is used to essentially erase the array size.
-    pub const fn as_table(&self) -> IdTable<'_, T, U> {
+    pub const fn as_table(&self) -> IdTable<'_, crate::pci::DeviceId, U> {
         IdTable {
             first: &self.ids[0],
             _p: PhantomData,
         }
     }
 }
+
+
 
 /// A device id table.
 ///
@@ -201,7 +239,7 @@ pub struct IdTable<'a, T: RawDeviceId, U> {
     _p: PhantomData<&'a U>,
 }
 
-impl<T: RawDeviceId, U> const AsRef<T::RawType> for IdTable<'_, T, U> {
+impl<T: RawDeviceId, U> AsRef<T::RawType> for IdTable<'_, T, U> {
     fn as_ref(&self) -> &T::RawType {
         self.first
     }

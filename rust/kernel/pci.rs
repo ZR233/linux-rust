@@ -139,6 +139,21 @@ impl DeviceId {
     }
 }
 
+impl DeviceId {
+    pub const fn to_rawid(&self, offset: isize)->bindings::pci_device_id{
+        bindings::pci_device_id {
+            vendor: self.vendor,
+            device: self.device,
+            subvendor: self.subvendor,
+            subdevice: self.subdevice,
+            class: self.class,
+            class_mask: self.class_mask,
+            driver_data: offset as _,
+            override_only: 0,
+        }
+    }
+}
+
 // SAFETY: `ZERO` is all zeroed-out and `to_rawid` stores `offset` in `pci_device_id::driver_data`.
 unsafe impl const driver::RawDeviceId for DeviceId {
     type RawType = bindings::pci_device_id;
